@@ -17,6 +17,7 @@ use fsevent_sys::{
     FSEventStreamEventFlags, FSEventStreamEventId, FSEventStreamRef,
     FSEventStreamScheduleWithRunLoop, FSEventStreamStart,
 };
+use tokio::{sync::mpsc, task};
 
 use std::{ffi::c_void, ptr, slice};
 
@@ -46,7 +47,7 @@ extern "C" fn raw_callback(
     callback(events);
 }
 
-fn listen(paths: Vec<String>, cb: EventsCallback) -> Result<()> {
+fn listen(paths: Vec<String>, callback: EventsCallback) -> Result<()> {
     extern "C" fn drop_callback(info: *const c_void) {
         let _cb: Box<EventsCallback> = unsafe { Box::from_raw(info as _) };
     }
@@ -55,7 +56,7 @@ fn listen(paths: Vec<String>, cb: EventsCallback) -> Result<()> {
     let paths = CFArray::from_CFTypes(&paths);
     let context = Box::leak(Box::new(FSEventStreamContext {
         version: 0,
-        info: Box::leak(Box::new(cb)) as *mut _ as _,
+        info: Box::leak(Box::new(callback)) as *mut _ as _,
         retain: None,
         release: Some(drop_callback),
         copy_description: None,
@@ -82,10 +83,18 @@ fn listen(paths: Vec<String>, cb: EventsCallback) -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
+    let (sender, mut receiver) = mpsc::unbounded_channel();
     let paths = vec!["/".into()];
-    listen(paths, Box::new(move |events| {
+    task::spawn_blocking(move || {
+        let callback = Box::new(move |events| {
+            sender.send(events).unwrap();
+        });
+        listen(paths, callback).unwrap();
+    });
+    while let Some(events) = receiver.recv().await {
         println!("{:#?}", events);
-    }))?;
+    }
     Ok(())
 }
