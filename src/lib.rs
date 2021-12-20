@@ -1,6 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 mod fsevent;
 mod fsevent_flags;
+mod pb;
 
 use fsevent::FsEvent;
 
@@ -17,7 +18,9 @@ use fsevent_sys::{
     FSEventStreamEventFlags, FSEventStreamEventId, FSEventStreamRef,
     FSEventStreamScheduleWithRunLoop, FSEventStreamStart,
 };
-use tokio::{sync::mpsc, task};
+use once_cell::sync::Lazy;
+use parking_lot::Mutex;
+use tokio::{runtime, sync::mpsc, task};
 
 use std::{ffi::c_void, ptr, slice};
 
@@ -83,8 +86,7 @@ fn listen(paths: Vec<String>, callback: EventsCallback) -> Result<()> {
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+async fn init_worker() -> Result<()> {
     let (sender, mut receiver) = mpsc::unbounded_channel();
     let paths = vec!["/".into()];
     task::spawn_blocking(move || {
@@ -94,7 +96,34 @@ async fn main() -> Result<()> {
         listen(paths, callback).unwrap();
     });
     while let Some(events) = receiver.recv().await {
-        println!("{:#?}", events);
+        EVENTS_LIST.lock().extend(events.into_iter());
     }
     Ok(())
+}
+
+static RUNTIME: Lazy<runtime::Runtime> = Lazy::new(|| {
+    runtime::Builder::new_multi_thread()
+        .thread_name("cardinal")
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .unwrap()
+});
+
+static EVENTS_LIST: Mutex<Vec<FsEvent>> = parking_lot::const_mutex(Vec::new());
+
+#[no_mangle]
+pub extern "C" fn init_sdk() {
+    if let Err(e) = RUNTIME.block_on(init_worker()) {
+        panic!("{:?}", e);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn get_events(
+    context: *const i8,
+    callback: Option<unsafe extern "C" fn(*const i8, *const i8)>,
+) {
+    let bytes = fsevent::write_events_to_bytes(&EVENTS_LIST.lock());
+    callback.map(|c| unsafe { c(context, bytes.as_ptr() as _) });
 }

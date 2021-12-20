@@ -1,6 +1,8 @@
 use super::fsevent_flags::EventFlags;
+use super::pb;
 
 use fsevent_sys::FSEventStreamEventId;
+use prost::Message;
 
 use std::{
     ffi::{CStr, OsStr},
@@ -23,4 +25,18 @@ impl FsEvent {
         let flag = EventFlags::from_bits_truncate(flag);
         FsEvent { path, flag, id }
     }
+
+    fn as_pb(&self) -> pb::RawFsEvent {
+        pb::RawFsEvent {
+            path: self.path.as_os_str().as_bytes().to_vec(),
+            flag: self.flag.bits(),
+            id: self.id,
+        }
+    }
+}
+
+pub fn write_events_to_bytes(events: &[FsEvent]) -> Vec<u8> {
+    let events = events.iter().map(|x| x.as_pb()).collect();
+    let events = pb::RawFsEvents { events };
+    events.encode_to_vec()
 }
