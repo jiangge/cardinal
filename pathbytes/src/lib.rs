@@ -40,13 +40,11 @@ pub fn b2p(bytes: &[u8]) -> &Path {
 }
 #[cfg(target_family = "unix")]
 pub fn b2p(bytes: &[u8]) -> &Path {
-    use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt;
     Path::new(OsStr::from_bytes(bytes))
 }
 #[cfg(target_family = "wasm")]
 pub fn b2p(bytes: &[u8]) -> &Path {
-    use std::ffi::OsStr;
     use std::os::wasm::ffi::OsStrExt;
     Path::new(OsStr::from_bytes(bytes))
 }
