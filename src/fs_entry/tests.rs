@@ -46,7 +46,7 @@ impl Default for Metadata {
 fn entry_from_empty_folder() {
     let tempdir = TempDir::new().unwrap();
     let path = tempdir.path();
-    let entry = scan(path);
+    let entry = DiskEntry::from_fs(path);
     compare_test_entry(
         DiskEntry {
             name: p2b(path).to_vec(),
@@ -66,7 +66,7 @@ fn entry_from_single_file() {
     let path = tempdir.path();
     let path = path.join("emm.txt");
     fs::write(&path, vec![42; 1000]).unwrap();
-    let entry = scan(&path);
+    let entry = DiskEntry::from_fs(&path);
     compare_test_entry(
         entry,
         DiskEntry {
@@ -171,7 +171,7 @@ fn test_complex_entry_scanner() {
     fs::create_dir_all(path.join("src/template")).unwrap();
     fs::write(path.join("src/template/hello.java"), vec![42; 514]).unwrap();
 
-    let entry = scan(path);
+    let entry = DiskEntry::from_fs(path);
     compare_test_entry(entry, complex_entry(path));
 }
 
@@ -299,7 +299,7 @@ fn entry_from_full_folder() {
     fs::write(path.join("bfolder/foo"), vec![42; 11]).unwrap();
     File::create(path.join("bfolder/bar")).unwrap();
     File::create(path.join("bfolder/cfolder/another")).unwrap();
-    let entry = scan(path);
+    let entry = DiskEntry::from_fs(path);
     compare_test_entry(entry, full_entry(path));
 }
 
@@ -482,7 +482,7 @@ mod symlink_tests {
         let tempdir = TempDir::new().unwrap();
         let path = &tempdir.path();
         create_complex_directory_with_symlink(path);
-        let entry = scan(path);
+        let entry = DiskEntry::from_fs(path);
         compare_test_entry(entry, complex_entry_with_symlink(path));
     }
 }

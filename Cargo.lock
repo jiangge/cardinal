@@ -31,18 +31,18 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
 name = "bincode"
-version = "2.0.0-beta.0"
+version = "2.0.0-beta.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "817259376ced58f50df7685cf1096352d8c5a50a761cde102f07c2188a1d9209"
+checksum = "a3b09eea9771bcc3c1d3f21325c51066859dbb9addfad6325273630d9ea1707d"
 dependencies = [
  "bincode_derive",
 ]
 
 [[package]]
 name = "bincode_derive"
-version = "2.0.0-beta.0"
+version = "2.0.0-beta.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0128c7e95efd1e373fc07093fdd7893a326ec8213856d0eb6f26c59946a941a"
+checksum = "ebde72585aa64e130b4c1d3612742253e7c486f25cb299b4373e505130519279"
 dependencies = [
  "virtue",
 ]
@@ -236,8 +236,9 @@ dependencies = [
 
 [[package]]
 name = "fsevent-sys"
-version = "4.0.0"
-source = "git+https://github.com/ldm0/fsevent-rust?branch=more_apis#b7dcc850774e782d2a0207e780d525304a9a6a57"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76ee7a02da4d231650c7cea31349b889be2f45ddb3ef3032d2ec8185f6313fd2"
 dependencies = [
  "libc",
 ]

@@ -76,6 +76,53 @@ pub struct DiskEntry {
     entries: Vec<DiskEntry>,
 }
 
+impl DiskEntry {
+    pub fn from_fs(path: &Path) -> DiskEntry {
+        fn scan_folder(
+            walker: &mut Peekable<DiskWalker>,
+            parent_path: &Path,
+            entry: &mut DiskEntry,
+        ) {
+            let DiskEntry { entries, .. } = entry;
+            loop {
+                // if a node under parent node.
+                let under_parent = walker
+                    .peek()
+                    .map(|(path, _)| path.starts_with(parent_path))
+                    .unwrap_or_default();
+                if !under_parent {
+                    break;
+                }
+                let (path, metadata) = match walker.next() {
+                    Some(x) => x,
+                    None => break,
+                };
+                // Should never panic since walkdir shouldn't emit same path twice.
+                assert_ne!(path, parent_path);
+                // Should never panic since root we are scanning after root.
+                let mut entry = DiskEntry {
+                    name: o2b(path.file_name().expect("a root path")).to_vec(),
+                    metadata,
+                    entries: Vec::new(),
+                };
+                scan_folder(walker, &path, &mut entry);
+                entries.push(entry);
+            }
+        }
+
+        let mut walker = DiskWalker::new(path).peekable();
+        let (root_path, metadata) = walker.next().unwrap();
+        assert_eq!(root_path, path);
+        let mut entry = DiskEntry {
+            name: p2b(path).to_vec(),
+            metadata,
+            entries: Vec::new(),
+        };
+        scan_folder(&mut walker, path, &mut entry);
+        entry
+    }
+}
+
 pub struct DiskWalker {
     walk_dir: Peekable<IntoIter>,
 }
@@ -84,16 +131,27 @@ impl Iterator for DiskWalker {
     /// Metadata is none when permission denied.
     type Item = (PathBuf, Option<Metadata>);
     fn next(&mut self) -> Option<Self::Item> {
-        match self.walk_dir.next()? {
-            Ok(entry) => {
-                let meta = entry.metadata().ok().map(|x| x.into());
-                let path = entry.into_path();
-                Some((path, meta))
+        loop {
+            match self.walk_dir.next()? {
+                Ok(entry) => {
+                    let meta = entry.metadata().ok().map(|x| x.into());
+                    let path = entry.into_path();
+                    break Some((path, meta));
+                }
+                Err(e) => {
+                    if let Some(path) = e.path() {
+                        // If we are trying to scan the inner elements in permission
+                        // denied folder, walkdir will return a error with the path
+                        // of the folder, here we filter out the dir path emitted in
+                        // this situation.
+                        if let Ok(x) = fs::symlink_metadata(path) {
+                            if !x.is_dir() {
+                                break Some((path.to_owned(), None));
+                            }
+                        }
+                    }
+                }
             }
-            Err(e) => match e.path() {
-                Some(path) => Some((path.to_owned(), None)),
-                None => None,
-            },
         }
     }
 }
@@ -103,47 +161,6 @@ impl DiskWalker {
         Self {
             walk_dir: WalkDir::new(path).into_iter().peekable(),
         }
-    }
-}
-
-pub fn scan(path: &Path) -> DiskEntry {
-    let mut walker = DiskWalker::new(path).peekable();
-    let (root_path, metadata) = walker.next().unwrap();
-    assert_eq!(root_path, path);
-    let mut entry = DiskEntry {
-        name: p2b(path).to_vec(),
-        metadata,
-        entries: Vec::new(),
-    };
-    scan_folder(&mut walker, path, &mut entry);
-    entry
-}
-
-fn scan_folder(walker: &mut Peekable<DiskWalker>, parent_path: &Path, entry: &mut DiskEntry) {
-    let DiskEntry { entries, .. } = entry;
-    loop {
-        // if a node under parent node.
-        let under_parent = walker
-            .peek()
-            .map(|(path, _)| path.starts_with(parent_path))
-            .unwrap_or_default();
-        if !under_parent {
-            break;
-        }
-        let (path, metadata) = match walker.next() {
-            Some(x) => x,
-            None => break,
-        };
-        // Should never panic since walkdir shouldn't emit same path twice.
-        assert!(path != parent_path);
-        // Should never panic since root we are scanning after root.
-        let mut entry = DiskEntry {
-            name: o2b(path.file_name().expect("a root path")).to_vec(),
-            metadata,
-            entries: Vec::new(),
-        };
-        scan_folder(walker, &path, &mut entry);
-        entries.push(entry);
     }
 }
 
