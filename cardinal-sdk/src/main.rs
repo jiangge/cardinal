@@ -225,54 +225,25 @@ impl Database {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     tracing_subscriber::fmt().with_env_filter("debug").init();
-    let _ = std::fs::remove_file(DATABASE_URL);
+    // let _ = std::fs::remove_file(DATABASE_URL);
     let mut db = Database::from_fs().unwrap();
-    let receiver = event_stream::spawn_event_watcher(db.event_id);
-    for fs_event in receiver.iter() {
-        dbg!(&fs_event);
-        if let Err(e) = db.merge_event(fs_event) {
-            error!(?e, "merge event failed:");
+    let mut receiver = event_stream::spawn_event_watcher(db.event_id);
+    loop {
+        tokio::select! {
+            fs_event = receiver.recv() => {
+                let fs_event = fs_event.unwrap();
+                merge_event(&mut db, fs_event);
+            }
         }
     }
 }
 
-/*
-async fn add_row(
-    conn: &mut SqliteConnection,
-    DiskEntryRaw { the_path, the_meta }: DiskEntryRaw,
-) -> Result<()> {
-    sqlx::query!(
-        r#"
-INSERT INTO rows (the_path, the_meta)
-VALUES (?,?)
-ON CONFLICT(the_path) DO UPDATE SET the_meta = excluded.the_meta
-        "#,
-        the_path,
-        the_meta
-    )
-    .execute(conn)
-    .await
-    .context("Upsert disk entry failed.")?;
-    Ok(())
+fn merge_event(db: &mut Database, fs_event: FsEvent) {
+    info!(?fs_event, "new event:");
+    if let Err(e) = db.merge_event(fs_event) {
+        error!(?e, "merge event failed:");
+    }
 }
-
-async fn get_row(pool: &SqlitePool, path: &[u8]) -> Result<DiskEntryRaw> {
-    let mut conn = pool.acquire().await?;
-    let row = sqlx::query_as!(
-        DiskEntryRaw,
-        r#"
-SELECT the_path, the_meta
-FROM rows
-WHERE the_path = ?
-        "#,
-        path
-    )
-    .fetch_one(&mut conn)
-    .await
-    .context("Fetch from db failed.")?;
-    Ok(row)
-}
-
- */

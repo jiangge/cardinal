@@ -11,6 +11,7 @@ use fsevent_sys::{
 };
 use std::ptr;
 use std::{ffi::c_void, slice};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 use tracing::warn;
 
 type EventsCallback = Box<dyn FnMut(Vec<FsEvent>) + Send>;
@@ -102,8 +103,8 @@ impl EventStream {
     }
 }
 
-pub fn spawn_event_watcher(raw_event_id: FSEventStreamEventId) -> Receiver<FsEvent> {
-    let (sender, receiver) = unbounded();
+pub fn spawn_event_watcher(raw_event_id: FSEventStreamEventId) -> UnboundedReceiver<FsEvent> {
+    let (sender, receiver) = unbounded_channel();
     std::thread::spawn(move || {
         EventStream::new(
             vec!["/".into()],

@@ -115,6 +115,7 @@ dependencies = [
  "pathbytes",
  "rand",
  "time 0.3.19",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "walkdir",
