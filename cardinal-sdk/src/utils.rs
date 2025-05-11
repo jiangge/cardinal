@@ -1,9 +1,10 @@
+use chrono::Utc;
 use fsevent_sys::{FSEventsGetCurrentEventId, FSEventsGetLastEventIdForDeviceBeforeTime};
 use libc::dev_t;
 use std::{cell::RefCell, collections::HashMap, ffi::CStr, mem::MaybeUninit};
 
 pub fn current_timestamp() -> i64 {
-    time::OffsetDateTime::now_utc().unix_timestamp()
+    Utc::now().timestamp()
 }
 
 pub fn current_event_id() -> u64 {
@@ -20,11 +21,12 @@ pub fn dev_of_path(path: &CStr) -> std::io::Result<dev_t> {
 }
 
 pub fn last_event_id_before_time(dev: dev_t, timestamp: i64) -> u64 {
-    // TODO(ldm0): Vec<dev_t, HashMap>, HashMap -> FifoMap
+    // TODO(ldm0): Vec<dev_t, HashMap>, HashMap -> lru_cache
     thread_local! {
         static DEV: RefCell<Option<dev_t>> = RefCell::new(None);
         static CACHE: RefCell<HashMap<i64, u64>> = RefCell::new(HashMap::new());
     }
+    // Ensure that device is the same for the whole thread.
     DEV.with(|dev_cache| {
         let mut dev_cache = dev_cache.borrow_mut();
         if dev_cache.is_none() {
@@ -33,6 +35,7 @@ pub fn last_event_id_before_time(dev: dev_t, timestamp: i64) -> u64 {
             assert_eq!(*dev_cache, Some(dev));
         }
     });
+    // Return cached result if exists.
     CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
         if let Some(&event_id) = cache.get(&timestamp) {
@@ -62,22 +65,5 @@ pub fn event_id_to_timestamp(dev: dev_t, event_id: u64) -> i64 {
         } else {
             return mid;
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_event_id_to_timestamp() {
-        let event_id = 49841209;
-        let dev = dev_of_path(c"/").unwrap();
-        let timestamp = event_id_to_timestamp(dev, event_id);
-        dbg!(
-            time::OffsetDateTime::from_unix_timestamp(timestamp)
-                .unwrap()
-                .replace_offset(time::UtcOffset::from_hms(8, 0, 0).unwrap())
-        );
     }
 }

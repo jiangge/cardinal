@@ -1,7 +1,5 @@
 use cardinal_sdk::{
-    fsevent::{EventFlag, EventStream, FsEvent},
-    fsevent_sys::FSEventStreamEventId,
-    utils::{dev_of_path, event_id_to_timestamp},
+    EventFlag, EventStream, FSEventStreamEventId, FsEvent, dev_of_path, event_id_to_timestamp,
 };
 use crossbeam::channel::{Receiver, unbounded};
 use std::time::Duration;

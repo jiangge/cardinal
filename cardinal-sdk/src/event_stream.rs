@@ -1,4 +1,4 @@
-use crate::fsevent::FsEvent;
+use crate::FsEvent;
 use anyhow::{Result, bail};
 use core_foundation::{array::CFArray, base::TCFType, string::CFString};
 use dispatch2::ffi::{DISPATCH_QUEUE_SERIAL, dispatch_queue_create};

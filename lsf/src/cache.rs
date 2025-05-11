@@ -4,10 +4,7 @@ use crate::{
     query::{Segment, query_segmentation},
 };
 use anyhow::{Context, Result, anyhow, bail};
-use cardinal_sdk::{
-    fsevent::{EventFlag, FsEvent, ScanType},
-    utils::current_event_id,
-};
+use cardinal_sdk::{EventFlag, FsEvent, ScanType, current_event_id};
 use fswalk::{Node, WalkData, walk_it};
 use namepool::NamePool;
 use slab::Slab;

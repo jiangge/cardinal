@@ -1,11 +1,4 @@
-mod event_flag;
-mod event_id;
-mod event_stream;
-
-pub use event_flag::{EventAction, EventFlag, ScanType};
-pub use event_id::EventId;
-pub use event_stream::{EventStream, spawn_event_watcher};
-use fsevent_sys::FSEventStreamEventId;
+use crate::{EventFlag, FSEventStreamEventId};
 use std::{
     ffi::{CStr, OsStr},
     os::unix::ffi::OsStrExt,

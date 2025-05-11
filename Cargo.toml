@@ -1,12 +1,10 @@
 [workspace]
 resolver = "3"
 members = [
-    "cardinal",
     "lsf",
     "cardinal-sdk",
     "fswalk",
     "namepool",
     "pathbytes",
     "was",
-    "xtask",
 ]

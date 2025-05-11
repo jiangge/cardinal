@@ -6,10 +6,7 @@ mod query;
 use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
 use cache::SearchCache;
-use cardinal_sdk::{
-    fsevent::{EventStream, FsEvent},
-    fsevent_sys::FSEventStreamEventId,
-};
+use cardinal_sdk::{EventStream, FSEventStreamEventId, FsEvent};
 use clap::Parser;
 use cli::Cli;
 use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
@@ -161,8 +158,6 @@ fn spawn_event_watcher(
 }
 
 // TODO(ldm0):
-// - file removal routine
-// - file addition routine
 // - segment search cache(same search routine will be triggered while user is typing, should cache exact[..], suffix, suffix/exact[..])
 // [] tui?
 // - lazy metadata design
