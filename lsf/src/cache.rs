@@ -307,13 +307,16 @@ impl SearchCache {
         }
         let walk_data = WalkData::with_ignore_directory(PathBuf::from("/System/Volumes/Data"));
         walk_it(raw_path, &walk_data).map(|node| {
-            create_node_slab_update_name_index_and_name_pool(
+            let node = create_node_slab_update_name_index_and_name_pool(
                 Some(parent),
                 &node,
                 &mut self.slab,
                 &mut self.name_index,
                 &mut self.name_pool,
-            )
+            );
+            // Push the newly created node to the parent's children
+            self.slab[parent].children.push(node);
+            node
         })
     }
 
