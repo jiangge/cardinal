@@ -78,7 +78,7 @@ fn main() -> Result<()> {
         match search_result {
             Ok(path_set) => {
                 for (i, path) in path_set.into_iter().enumerate() {
-                    println!("[{i}] \"{}\" {:?}", path.path, path.metadata);
+                    println!("[{i}] {:?} {:?}", path.path, path.metadata);
                 }
             }
             Err(e) => {

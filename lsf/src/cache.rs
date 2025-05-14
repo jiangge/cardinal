@@ -13,7 +13,7 @@ use std::{
     collections::BTreeMap,
     ffi::{CString, OsStr},
     io::ErrorKind,
-    path::{MAIN_SEPARATOR_STR, Path, PathBuf},
+    path::{Path, PathBuf},
     time::Instant,
 };
 use typed_num::Num;
@@ -54,7 +54,7 @@ pub struct SearchCache {
 
 #[derive(Debug)]
 pub struct SearchNode {
-    pub path: String,
+    pub path: PathBuf,
     pub metadata: Option<SlabNodeMetadata>,
 }
 
@@ -220,29 +220,17 @@ impl SearchCache {
     }
 
     /// Get the path of the node in the slab.
-    /// TODO(ldm0): fix root node path badcase: `/var/folders/2b/kq1p5svj1mq0sdbxwy1j564c0000gn/T/test_walk_fs_meta.wfYzYPRu9Col/test_walk_fs_meta.wfYzYPRu9Col`
-    pub fn node_path(&self, index: usize) -> String {
-        let node = &self.slab[index];
-        let mut segments = vec![node.name.clone()];
-        // Write code like this to avoid the root node, which has no node name and shouldn't be put into semgents.
-        if let Some(mut parent) = node.parent {
-            while let Some(new_parent) = self.slab[parent].parent {
-                segments.push(self.slab[parent].name.clone());
-                parent = new_parent;
-            }
+    pub fn node_path(&self, index: usize) -> PathBuf {
+        let mut current = index;
+        let mut segments = vec![];
+        while let Some(parent) = self.slab[current].parent {
+            segments.push(self.slab[current].name.clone());
+            current = parent;
         }
-        let mut result = String::new();
-        for segment in self
-            .path
+        self.path
             .iter()
-            .filter(|&x| x != OsStr::new(MAIN_SEPARATOR_STR))
-            .map(|x| x.to_string_lossy().into_owned())
-            .chain(segments.into_iter().rev())
-        {
-            result.push('/');
-            result.push_str(&segment);
-        }
-        result
+            .chain(segments.iter().rev().map(OsStr::new))
+            .collect()
     }
 
     fn push_node(&mut self, node: SlabNode) -> usize {
@@ -1075,5 +1063,272 @@ mod tests {
             file_in_subdir_slab_meta.mtime.is_some(),
             "mtime should be populated for file_in_event_subdir.txt"
         );
+    }
+
+    #[test]
+    fn test_query_files_basic_and_no_results() {
+        let temp_dir = TempDir::new("test_query_files_basic").unwrap();
+        let root_path = temp_dir.path();
+
+        fs::File::create(root_path.join("file_a.txt")).unwrap();
+        fs::create_dir(root_path.join("dir_b")).unwrap();
+        fs::File::create(root_path.join("dir_b/file_c.md")).unwrap();
+
+        let cache = SearchCache::walk_fs(root_path.to_path_buf());
+
+        // 1. Query for a specific file
+        let results1 = cache.query_files("file_a.txt".to_string()).unwrap();
+        assert_eq!(results1.len(), 1);
+        assert!(
+            results1[0].path.ends_with("file_a.txt"),
+            "Path was: {:?}",
+            results1[0].path
+        );
+        assert!(
+            results1[0].metadata.is_none(),
+            "File metadata should be None after walk_fs"
+        );
+
+        // 2. Query for a file in a subdirectory
+        let results2 = cache.query_files("file_c.md".to_string()).unwrap();
+        assert_eq!(results2.len(), 1);
+        assert!(
+            results2[0].path.ends_with("dir_b/file_c.md"),
+            "Path was: {:?}",
+            results2[0].path
+        );
+        assert!(results2[0].metadata.is_none());
+
+        // 3. Query for a directory
+        let results3 = cache.query_files("dir_b".to_string()).unwrap();
+        assert_eq!(results3.len(), 1);
+        assert!(
+            results3[0].path.ends_with("dir_b"),
+            "Path was: {:?}",
+            results3[0].path
+        );
+        assert!(
+            results3[0].metadata.is_some(),
+            "Directory metadata should be Some after walk_fs"
+        );
+
+        // 4. Query with no results
+        let results4 = cache.query_files("non_existent.zip".to_string()).unwrap();
+        assert_eq!(results4.len(), 0);
+    }
+
+    #[test]
+    fn test_query_files_multiple_matches_and_segments() {
+        let temp_dir = TempDir::new("test_query_files_multi").unwrap();
+        let root_path = temp_dir.path();
+
+        fs::File::create(root_path.join("file_a.txt")).unwrap();
+        fs::File::create(root_path.join("another_file_a.log")).unwrap();
+        fs::create_dir(root_path.join("dir_b")).unwrap();
+        fs::File::create(root_path.join("dir_b/file_c.md")).unwrap();
+
+        let cache = SearchCache::walk_fs(root_path.to_path_buf());
+
+        // 5. Query matching multiple files (substring)
+        let results5 = cache.query_files("file_a".to_string()).unwrap();
+        assert_eq!(
+            results5.len(),
+            2,
+            "Expected to find 'file_a.txt' and 'another_file_a.log'"
+        );
+        let paths5: Vec<_> = results5.iter().map(|r| r.path.clone()).collect();
+        assert!(paths5.iter().any(|p| p.ends_with("file_a.txt")));
+        assert!(paths5.iter().any(|p| p.ends_with("another_file_a.log")));
+
+        // 6. Query with multiple segments (path-like search)
+        // "dir_b/file_c" should find "dir_b/file_c.md"
+        let results6 = cache.query_files("dir_b/file_c".to_string()).unwrap();
+        assert_eq!(results6.len(), 1);
+        assert!(
+            results6[0].path.ends_with("dir_b/file_c.md"),
+            "Path was: {:?}",
+            results6[0].path
+        );
+    }
+
+    #[test]
+    fn test_query_files_root_directory() {
+        let temp_dir = TempDir::new("test_query_files_root").unwrap();
+        let root_path = temp_dir.path();
+        fs::File::create(root_path.join("some_file.txt")).unwrap(); // Add a file to make cache non-trivial
+
+        let cache = SearchCache::walk_fs(root_path.to_path_buf());
+        let root_dir_name = root_path.file_name().unwrap().to_str().unwrap();
+
+        let results = cache.query_files(root_dir_name.to_string()).unwrap();
+        assert_eq!(results.len(), 1, "Should find the root directory itself");
+        let expected_path = root_path;
+        assert_eq!(
+            results[0].path, expected_path,
+            "Path for root query mismatch. Expected: {:?}, Got: {:?}",
+            expected_path, results[0].path
+        );
+        assert!(
+            results[0].metadata.is_some(),
+            "Root directory metadata should be Some"
+        );
+    }
+
+    #[test]
+    fn test_query_files_empty_query_string() {
+        let temp_dir = TempDir::new("test_query_files_empty_q").unwrap();
+        let cache = SearchCache::walk_fs(temp_dir.path().to_path_buf());
+        // query_segmentation("") returns empty vec, search() then bails.
+        let result = cache.query_files("".to_string());
+        assert!(
+            result.is_err(),
+            "Empty query string should result in an error"
+        );
+    }
+
+    #[test]
+    fn test_query_files_deep_path_construction_and_multi_segment() {
+        let temp_dir = TempDir::new("test_query_deep_path").unwrap();
+        let root = temp_dir.path();
+        let sub1 = root.join("alpha_dir");
+        let sub2 = sub1.join("beta_subdir");
+        let file_in_sub2 = sub2.join("gamma_file.txt");
+
+        fs::create_dir_all(&sub2).unwrap();
+        fs::File::create(&file_in_sub2).unwrap();
+
+        let cache = SearchCache::walk_fs(root.to_path_buf());
+
+        // Query for the deep file directly
+        let results_deep_file = cache.query_files("gamma_file.txt".to_string()).unwrap();
+        assert_eq!(results_deep_file.len(), 1);
+        let expected_suffix_deep = format!("alpha_dir/beta_subdir/gamma_file.txt");
+        assert!(
+            results_deep_file[0].path.ends_with(&expected_suffix_deep),
+            "Path was: {:?}",
+            results_deep_file[0].path
+        );
+
+        // Query for intermediate directory
+        let results_sub1 = cache.query_files("alpha_dir".to_string()).unwrap();
+        assert_eq!(results_sub1.len(), 1);
+        assert!(
+            results_sub1[0].path.ends_with("alpha_dir"),
+            "Path was: {:?}",
+            results_sub1[0].path
+        );
+
+        // Query for nested intermediate directory
+        let results_sub2 = cache.query_files("beta_subdir".to_string()).unwrap();
+        assert_eq!(results_sub2.len(), 1);
+        assert!(
+            results_sub2[0].path.ends_with("alpha_dir/beta_subdir"),
+            "Path was: {:?}",
+            results_sub2[0].path
+        );
+
+        // Test multi-segment query for the deep file
+        let results_multi_segment = cache
+            .query_files("alpha_dir/beta_subdir/gamma_file".to_string())
+            .unwrap();
+        assert_eq!(results_multi_segment.len(), 1);
+        assert!(
+            results_multi_segment[0]
+                .path
+                .ends_with(&expected_suffix_deep),
+            "Path was: {:?}",
+            results_multi_segment[0].path
+        );
+
+        // Test multi-segment query for an intermediate directory
+        let results_multi_segment_dir = cache
+            .query_files("alpha_dir/beta_subdir".to_string())
+            .unwrap();
+        assert_eq!(results_multi_segment_dir.len(), 1);
+        assert!(
+            results_multi_segment_dir[0]
+                .path
+                .ends_with("alpha_dir/beta_subdir"),
+            "Path was: {:?}",
+            results_multi_segment_dir[0].path
+        );
+    }
+
+    #[test]
+    fn test_query_files_metadata_consistency_after_walk_and_event() {
+        let temp_dir = TempDir::new("test_query_meta_consistency").unwrap();
+        let root_path = temp_dir.path();
+
+        let file_path_walk = root_path.join("walk_file.txt");
+        let dir_path_walk = root_path.join("walk_dir");
+        fs::File::create(&file_path_walk).unwrap();
+        fs::create_dir(&dir_path_walk).unwrap();
+
+        let mut cache = SearchCache::walk_fs(root_path.to_path_buf());
+
+        // Check metadata from initial walk_fs
+        let results_file_walk = cache.query_files("walk_file.txt".to_string()).unwrap();
+        assert_eq!(results_file_walk.len(), 1);
+        assert!(
+            results_file_walk[0].metadata.is_none(),
+            "File metadata from walk_fs should be None"
+        );
+
+        let results_dir_walk = cache.query_files("walk_dir".to_string()).unwrap();
+        assert_eq!(results_dir_walk.len(), 1);
+        assert!(
+            results_dir_walk[0].metadata.is_some(),
+            "Directory metadata from walk_fs should be Some"
+        );
+
+        // Simulate an event for a new file
+        let event_file_path = root_path.join("event_added_file.txt");
+        fs::write(&event_file_path, "content123").unwrap(); // content of size 10
+        let last_event_id = cache.last_event_id();
+        let event = FsEvent {
+            path: event_file_path.clone(),
+            id: last_event_id + 1,
+            flag: EventFlag::ItemCreated,
+        };
+        cache.handle_fs_events(vec![event]);
+
+        let results_event_file = cache
+            .query_files("event_added_file.txt".to_string())
+            .unwrap();
+        assert_eq!(results_event_file.len(), 1);
+        let event_file_meta = results_event_file[0]
+            .metadata
+            .as_ref()
+            .expect("File metadata should be Some after event processing");
+        assert_eq!(event_file_meta.size, 10);
+
+        // Simulate an event for a new directory with a file in it
+        let event_dir_path = root_path.join("event_added_dir");
+        fs::create_dir(&event_dir_path).unwrap();
+        let file_in_event_dir_path = event_dir_path.join("inner_event.dat");
+        fs::write(&file_in_event_dir_path, "data").unwrap(); // content of size 4
+
+        let last_event_id_2 = cache.last_event_id();
+        let event_dir = FsEvent {
+            path: event_dir_path.clone(), // Event is for the directory
+            id: last_event_id_2 + 1,
+            flag: EventFlag::ItemCreated | EventFlag::ItemIsDir, // scan_path_recursive will scan children
+        };
+        cache.handle_fs_events(vec![event_dir]);
+
+        let results_event_dir = cache.query_files("event_added_dir".to_string()).unwrap();
+        assert_eq!(results_event_dir.len(), 1);
+        assert!(
+            results_event_dir[0].metadata.is_some(),
+            "Dir metadata should be Some after event processing for dir"
+        );
+
+        let results_file_in_event_dir = cache.query_files("inner_event.dat".to_string()).unwrap();
+        assert_eq!(results_file_in_event_dir.len(), 1);
+        let inner_file_meta = results_file_in_event_dir[0]
+            .metadata
+            .as_ref()
+            .expect("File in event-added dir metadata should be Some");
+        assert_eq!(inner_file_meta.size, 4);
     }
 }
