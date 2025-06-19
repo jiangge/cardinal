@@ -7,6 +7,7 @@ edition = "2024"
 fswalk.path = "../fswalk"
 namepool.path = "../namepool"
 cardinal-sdk.path = "../cardinal-sdk"
+query-segmentation.path = "../query-segmentation"
 bincode = "2"
 zstd = { version = "0.13", features = ["zstdmt"] }
 serde = { version = "1", features = ["derive"] }

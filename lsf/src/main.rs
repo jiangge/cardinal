@@ -1,7 +1,6 @@
 mod cache;
 mod cli;
 mod persistent;
-mod query;
 
 use anyhow::{Context, Result};
 use cache::{SearchCache, SearchNode};

@@ -8,6 +8,7 @@ members = [
     "pathbytes",
     "was",
     "lsf-tui",
+    "query-segmentation",
 ]
 exclude = [
     "cardinal",

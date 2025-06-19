@@ -786,6 +786,7 @@ dependencies = [
  "crossbeam-channel",
  "fswalk",
  "namepool",
+ "query-segmentation",
  "serde",
  "slab",
  "tempdir",
@@ -961,6 +962,10 @@ checksum = "a31971752e70b8b2686d7e46ec17fb38dad4051d94024c88df49b667caea9c84"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "query-segmentation"
+version = "0.1.0"
 
 [[package]]
 name = "quote"
