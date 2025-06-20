@@ -418,10 +418,11 @@ impl SearchCache {
 
     fn update_last_event_id(&mut self, event_id: u64) {
         if event_id <= self.last_event_id {
-            eprintln!("Event id is not increasing, ignoring");
-            return;
+            println!("last_event_id {} |< {event_id}", self.last_event_id);
+        } else {
+            println!("last_event_id {} => {event_id}", self.last_event_id);
+            self.last_event_id = event_id;
         }
-        self.last_event_id = event_id;
     }
 
     pub fn last_event_id(&mut self) -> u64 {
