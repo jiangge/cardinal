@@ -39,6 +39,7 @@ function App() {
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
+          onInput={handleSearch}
         />
         <button onClick={handleSearch}>Search</button>
       </div>
