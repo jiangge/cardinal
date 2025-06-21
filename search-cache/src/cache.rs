@@ -448,19 +448,19 @@ impl SearchCache {
                 // TODO(ldm0): use scan_path_nonrecursive until we are confident about each event flag meaning.
                 let file = self.scan_path_recursive(&event.path);
                 if file.is_some() {
-                    debug!("File changed: {:?}, {file:?}", event.path);
+                    info!("File changed: {:?}, {file:?}", event.path);
                 }
             }
             ScanType::Folder => {
                 let folder = self.scan_path_recursive(&event.path);
                 if folder.is_some() {
-                    debug!("Folder changed: {:?}, {folder:?}", event.path);
+                    info!("Folder changed: {:?}, {folder:?}", event.path);
                 }
             }
             ScanType::ReScan => {
-                debug!("!!! Rescanning");
+                info!("!!! Rescanning");
                 self.rescan();
-                debug!("!!! Rescan done: {:?}", self.slab_root);
+                info!("!!! Rescan done: {:?}", self.slab_root);
             }
             ScanType::Nop => {}
         }
