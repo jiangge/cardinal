@@ -1,9 +1,9 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 use anyhow::{Context, Result};
-use cardinal_sdk::{EventStream, FSEventStreamEventId, FsEvent};
+use cardinal_sdk::{EventFlag, EventStream, FSEventStreamEventId, FsEvent};
 use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use search_cache::{SearchCache, SearchNode};
-use std::path::PathBuf;
+use std::{cell::LazyCell, path::PathBuf};
 use tauri::{Emitter, RunEvent, State};
 use tracing::{info, level_filters::LevelFilter};
 use tracing_subscriber::EnvFilter;
@@ -88,15 +88,18 @@ pub fn run() -> Result<()> {
     std::thread::spawn(move || {
         // 初始化搜索缓存
         let path = PathBuf::from("/");
+        let emit_init = LazyCell::new(|| app_handle.emit("init_completed", ()).unwrap());
         let mut cache = if let Ok(cached) = SearchCache::try_read_persistent_cache(&path) {
             info!("Loaded existing cache");
+            // If using cache, delay the emit init process to HistoryDone event processing
             cached
         } else {
             info!("Walking filesystem...");
-            SearchCache::walk_fs(path.clone())
+            let cache = SearchCache::walk_fs(path.clone());
+            // If full file system scan, emit initialized instantly.
+            *emit_init;
+            cache
         };
-
-        app_handle.emit("init_completed", ()).unwrap();
 
         // 启动事件监听器
         let event_stream = spawn_event_watcher("/".to_string(), cache.last_event_id());
@@ -116,6 +119,10 @@ pub fn run() -> Result<()> {
                 }
                 recv(event_stream) -> events => {
                     let events = events.expect("Event stream closed");
+                    // Emit HistoryDone inform frontend that cache is ready.
+                    if events.iter().any(|x| x.flag == EventFlag::HistoryDone) {
+                        *emit_init;
+                    }
                     cache.handle_fs_events(events);
                 }
             }
