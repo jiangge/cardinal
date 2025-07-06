@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { once } from '@tauri-apps/api/event';
+import { once, listen } from '@tauri-apps/api/event';
 import { List, AutoSizer } from 'react-virtualized';
 import 'react-virtualized/styles.css';
 import "./App.css";
@@ -10,8 +10,12 @@ function App() {
   const [results, setResults] = useState([]);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isStatusBarVisible, setIsStatusBarVisible] = useState(true);
+  const [statusText, setStatusText] = useState("Walking filesystem...");
 
   useEffect(() => {
+    listen('status_update', (event) => {
+      setStatusText(event.payload);
+    });
     once('init_completed', () => {
       setIsInitialized(true);
     });
@@ -71,7 +75,7 @@ function App() {
           {isInitialized ? 'Initialized' : 
             <div className="initializing-container">
               <div className="spinner"></div>
-              <span>Initializing...</span>
+              <span>{statusText}</span>
             </div>
           }
         </div>

@@ -68,7 +68,11 @@ pub fn run() -> Result<()> {
     std::thread::spawn(move || {
         // 初始化搜索缓存
         let path = PathBuf::from("/");
-        let emit_init = LazyCell::new(|| app_handle.emit("init_completed", ()).unwrap());
+        let mut processed_events = 0;
+        let emit_init = {
+            let app_handle_clone = app_handle.clone();
+            LazyCell::new(move || app_handle_clone.emit("init_completed", ()).unwrap())
+        };
         let mut cache = if let Ok(cached) = SearchCache::try_read_persistent_cache(&path) {
             info!("Loaded existing cache");
             // If using cache, delay the emit init process to HistoryDone event processing
@@ -99,6 +103,8 @@ pub fn run() -> Result<()> {
                 }
                 recv(event_watcher.receiver) -> events => {
                     let events = events.expect("Event stream closed");
+                    processed_events += events.len();
+                    app_handle.emit("status_update", format!("Processing {} events...", processed_events)).unwrap();
                     // Emit HistoryDone inform frontend that cache is ready.
                     if events.iter().any(|x| x.flag == EventFlag::HistoryDone) {
                         *emit_init;

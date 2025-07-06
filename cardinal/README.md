@@ -17,3 +17,7 @@
 - 增加 fsevent path merger: 
     - /app/good + /app/good/Cargo.toml == /app/good
     - /app/good/aaa.txt + /app/good/aaa.txt == /app/good/aaa.txt
+
+```bash
+npm run tauri dev -- --release
+```
