@@ -17,6 +17,7 @@ export function useScrollbarSync({ listRef, scrollAreaRef, results, colWidths, s
       }
       const barHeight = Math.max(32, visibleHeight * visibleHeight / totalHeight);
       const barTop = (scrollTop / totalHeight) * visibleHeight;
+      console.log('debug', { totalHeight, visibleHeight, scrollTop, barHeight, colWidths, barTop  });
       setVerticalBar({ top: barTop, height: barHeight, visible: true });
     }
     function updateHorizontalBar() {
