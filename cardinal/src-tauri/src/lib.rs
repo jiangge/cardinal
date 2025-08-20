@@ -198,35 +198,22 @@ pub fn run() -> Result<()> {
         info!("Background thread exited");
     });
 
-    app.run(move |app_handle, event| {
+    app.run(move |_app_handle, event| {
         match &event {
-            RunEvent::ExitRequested { api, code, .. } => {
-                // Keep the event loop running even if all windows are closed
-                // This allow us to catch tray icon events when there is no window
-                // if we manually requested an exit (code is Some(_)) we will let it go through
-                if code.is_none() {
-                    info!("Tauri application exited, flushing cache...");
+            RunEvent::Exit => {
+                // Write cache to file before app exit
+                let (cache_tx, cache_rx) = bounded::<SearchCache>(1);
+                finish_tx
+                    .send(cache_tx)
+                    .context("cache_tx is closed")
+                    .unwrap();
+                let cache = cache_rx.recv().context("cache_tx is closed").unwrap();
+                cache
+                    .flush_to_file()
+                    .context("Failed to write cache to file")
+                    .unwrap();
 
-                    // TODO(ldm0): is this necessary?
-                    api.prevent_exit();
-
-                    // TODO(ldm0): change the tray icon to "saving"
-
-                    let (cache_tx, cache_rx) = bounded::<SearchCache>(1);
-                    finish_tx
-                        .send(cache_tx)
-                        .context("cache_tx is closed")
-                        .unwrap();
-                    let cache = cache_rx.recv().context("cache_tx is closed").unwrap();
-                    cache
-                        .flush_to_file()
-                        .context("Failed to write cache to file")
-                        .unwrap();
-
-                    info!("Cache flushed successfully");
-
-                    app_handle.exit(0);
-                }
+                info!("Cache flushed successfully");
             }
             _ => (),
         }
