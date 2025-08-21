@@ -2,32 +2,29 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, once } from '@tauri-apps/api/event';
 import { LRUCache } from '../utils/LRUCache';
-import { CACHE_SIZE, SEARCH_DEBOUNCE_MS, STATUS_FADE_DELAY_MS } from '../constants';
+import { CACHE_SIZE, SEARCH_DEBOUNCE_MS } from '../constants';
 
 export function useAppState() {
   const [results, setResults] = useState([]);
   const [isInitialized, setIsInitialized] = useState(false);
-  const [isStatusBarVisible, setIsStatusBarVisible] = useState(true);
-  const [statusText, setStatusText] = useState("Walking filesystem...");
+  const [scannedFiles, setScannedFiles] = useState(0);
+  const [processedEvents, setProcessedEvents] = useState(0);
 
   useEffect(() => {
-    listen('status_update', (event) => setStatusText(event.payload));
+    listen('status_bar_update', (event) => {
+      const { scanned_files, processed_events } = event.payload;
+      setScannedFiles(scanned_files);
+      setProcessedEvents(processed_events);
+    });
     once('init_completed', () => setIsInitialized(true));
   }, []);
-
-  useEffect(() => {
-    if (isInitialized) {
-      const timer = setTimeout(() => setIsStatusBarVisible(false), STATUS_FADE_DELAY_MS);
-      return () => clearTimeout(timer);
-    }
-  }, [isInitialized]);
 
   return {
     results,
     setResults,
     isInitialized,
-    isStatusBarVisible,
-    statusText
+    scannedFiles,
+    processedEvents
   };
 }
 

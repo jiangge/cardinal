@@ -5,13 +5,14 @@ import "./App.css";
 import { ContextMenu } from "./components/ContextMenu";
 import { ColumnHeader } from "./components/ColumnHeader";
 import { FileRow } from "./components/FileRow";
+import StatusBar from "./components/StatusBar";
 import { useAppState, useSearch, useVirtualizedList } from "./hooks";
 import { useColumnResize } from "./hooks/useColumnResize";
 import { useContextMenu } from "./hooks/useContextMenu";
 import { ROW_HEIGHT, OVERSCAN_ROW_COUNT, calculateColumnsTotal } from "./constants";
 
 function App() {
-  const { results, setResults, isInitialized, isStatusBarVisible, statusText } = useAppState();
+  const { results, setResults, isInitialized, scannedFiles, processedEvents } = useAppState();
   const { colWidths, onResizeStart } = useColumnResize();
   const { lruCache, infiniteLoaderRef, isCellLoaded, loadMoreRows } = useVirtualizedList(results);
   const { contextMenu, showContextMenu, closeContextMenu, menuItems } = useContextMenu();
@@ -120,16 +121,6 @@ function App() {
           </div>
         </div>
       </div>
-      {isStatusBarVisible && (
-        <div className={`status-bar ${isInitialized ? 'fade-out' : ''}`}>
-          {isInitialized ? 'Initialized' : (
-            <div className="initializing-container">
-              <div className="spinner"></div>
-              <span>{statusText}</span>
-            </div>
-          )}
-        </div>
-      )}
       {contextMenu.visible && (
         <ContextMenu
           x={contextMenu.x}
@@ -138,6 +129,11 @@ function App() {
           onClose={closeContextMenu}
         />
       )}
+      <StatusBar 
+        scannedFiles={scannedFiles} 
+        processedEvents={processedEvents} 
+        isReady={isInitialized}
+      />
     </main>
   );
 }

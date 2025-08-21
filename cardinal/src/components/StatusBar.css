@@ -1,0 +1,48 @@
+.status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 24px;
+  background: #1e1e1e;
+  border-top: 1px solid #333;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  font-size: 12px;
+  color: #cccccc;
+  z-index: 1000;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+}
+
+.status-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.readiness-indicator {
+  margin-right: 8px;
+  font-weight: bold;
+}
+
+.readiness-indicator.ready {
+  color: #4CAF50;
+}
+
+.readiness-indicator.not-ready {
+  color: #FF9800;
+}
+
+.status-label {
+  color: #999;
+  font-weight: 500;
+}
+
+.status-value {
+  color: #fff;
+  font-weight: 600;
+  min-width: 40px;
+  text-align: right;
+}

@@ -59,6 +59,12 @@ struct NodeInfo {
     metadata: Option<SlabNodeMetadata>,
 }
 
+#[derive(Serialize, Clone)]
+struct StatusBarUpdate {
+    scanned_files: usize,
+    processed_events: usize,
+}
+
 #[tauri::command]
 async fn get_nodes_info(
     results: Vec<usize>,
@@ -151,6 +157,13 @@ pub fn run() -> Result<()> {
         {
             info!("Loaded existing cache");
             // If using cache, defer the emit init process to HistoryDone event processing
+            
+            // 发送初始状态栏信息
+            app_handle.emit("status_bar_update", StatusBarUpdate {
+                scanned_files: cached.get_total_files(),
+                processed_events
+            }).unwrap();
+            
             cached
         } else {
             info!("Walking filesystem...");
@@ -164,13 +177,14 @@ pub fn run() -> Result<()> {
                 while !walking_done_clone.load(Ordering::Relaxed) {
                     let dirs = walk_data_clone.num_dirs.load(Ordering::Relaxed);
                     let files = walk_data_clone.num_files.load(Ordering::Relaxed);
+                    let total = dirs + files;
                     app_handle_clone
                         .emit(
-                            "status_update",
-                            format!(
-                                "Walking filesystem... {} directories, {} files...",
-                                dirs, files
-                            ),
+                            "status_bar_update",
+                            StatusBarUpdate {
+                                scanned_files: total,
+                                processed_events: 0
+                            },
                         )
                         .unwrap();
                     std::thread::sleep(Duration::from_millis(100));
@@ -179,6 +193,13 @@ pub fn run() -> Result<()> {
 
             let cache = SearchCache::walk_fs_with_walk_data(path.clone(), &walk_data);
             walking_done.store(true, Ordering::Relaxed);
+            
+            // 发送初始状态栏信息
+            app_handle.emit("status_bar_update", StatusBarUpdate {
+                scanned_files: cache.get_total_files(),
+                processed_events
+            }).unwrap();
+            
             // If full file system scan, emit initialized instantly.
             *emit_init;
             cache
@@ -211,7 +232,13 @@ pub fn run() -> Result<()> {
                 recv(event_watcher.receiver) -> events => {
                     let events = events.expect("Event stream closed");
                     processed_events += events.len();
-                    app_handle.emit("status_update", format!("Processing {} events...", processed_events)).unwrap();
+                    
+                    // 发送状态栏更新事件，包含文件扫描数和处理的事件数
+                    app_handle.emit("status_bar_update", StatusBarUpdate {
+                        scanned_files: cache.get_total_files(),
+                        processed_events
+                    }).unwrap();
+                    
                     // Emit HistoryDone inform frontend that cache is ready.
                     if events.iter().any(|x| x.flag == EventFlag::HistoryDone) {
                         *emit_init;
