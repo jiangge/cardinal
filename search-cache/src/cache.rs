@@ -444,14 +444,22 @@ impl SearchCache {
         self.last_event_id
     }
 
+    /// Note that this function doesn't fetch metadata(even if it's not cahced) for the nodes.
     pub fn query_files(&mut self, query: String) -> Result<Vec<SearchNode>> {
         self.search(&query)
-            .map(|nodes| self.expand_file_nodes(nodes))
+            .map(|nodes| self.expand_file_nodes_inner::<false>(nodes))
     }
 
     /// Returns a node info vector with the same length as the input nodes.
     /// If the given node is not found, an empty SearchNode is returned.
     pub fn expand_file_nodes(&mut self, nodes: Vec<usize>) -> Vec<SearchNode> {
+        self.expand_file_nodes_inner::<true>(nodes)
+    }
+
+    fn expand_file_nodes_inner<const FETCH_META: bool>(
+        &mut self,
+        nodes: Vec<usize>,
+    ) -> Vec<SearchNode> {
         nodes
             .into_iter()
             .map(|node| {
@@ -459,17 +467,21 @@ impl SearchCache {
                 let metadata = self.slab.get_mut(node).and_then(|node| {
                     if let Some(metadata) = &node.metadata {
                         Some(metadata.clone())
-                    } else if let Some(path) = &path {
-                        // try fetching metadata if it's not cached and cache them
-                        let metadata = std::fs::metadata(path)
-                            .ok()
-                            .map(NodeMetadata::from)
-                            .as_ref()
-                            .map(SlabNodeMetadata::new);
-                        node.metadata = metadata;
-                        metadata
                     } else {
-                        None
+                        if !FETCH_META {
+                            None
+                        } else if let Some(path) = &path {
+                            // try fetching metadata if it's not cached and cache them
+                            let metadata = std::fs::metadata(path)
+                                .ok()
+                                .map(NodeMetadata::from)
+                                .as_ref()
+                                .map(SlabNodeMetadata::new);
+                            node.metadata = metadata;
+                            metadata
+                        } else {
+                            None
+                        }
                     }
                 });
                 SearchNode {
@@ -1125,7 +1137,7 @@ mod tests {
         fs::create_dir(root_path.join("dir_b")).unwrap();
         fs::File::create(root_path.join("dir_b/file_c.md")).unwrap();
 
-        let cache = SearchCache::walk_fs(root_path.to_path_buf());
+        let mut cache = SearchCache::walk_fs(root_path.to_path_buf());
 
         // 1. Query for a specific file
         let results1 = cache.query_files("file_a.txt".to_string()).unwrap();
@@ -1178,7 +1190,7 @@ mod tests {
         fs::create_dir(root_path.join("dir_b")).unwrap();
         fs::File::create(root_path.join("dir_b/file_c.md")).unwrap();
 
-        let cache = SearchCache::walk_fs(root_path.to_path_buf());
+        let mut cache = SearchCache::walk_fs(root_path.to_path_buf());
 
         // 5. Query matching multiple files (substring)
         let results5 = cache.query_files("file_a".to_string()).unwrap();
@@ -1208,7 +1220,7 @@ mod tests {
         let root_path = temp_dir.path();
         fs::File::create(root_path.join("some_file.txt")).unwrap(); // Add a file to make cache non-trivial
 
-        let cache = SearchCache::walk_fs(root_path.to_path_buf());
+        let mut cache = SearchCache::walk_fs(root_path.to_path_buf());
         let root_dir_name = root_path.file_name().unwrap().to_str().unwrap();
 
         let results = cache.query_files(root_dir_name.to_string()).unwrap();
@@ -1228,7 +1240,7 @@ mod tests {
     #[test]
     fn test_query_files_empty_query_string() {
         let temp_dir = TempDir::new("test_query_files_empty_q").unwrap();
-        let cache = SearchCache::walk_fs(temp_dir.path().to_path_buf());
+        let mut cache = SearchCache::walk_fs(temp_dir.path().to_path_buf());
         // query_segmentation("") returns empty vec, search() then bails.
         let result = cache.query_files("".to_string());
         assert!(
@@ -1248,7 +1260,7 @@ mod tests {
         fs::create_dir_all(&sub2).unwrap();
         fs::File::create(&file_in_sub2).unwrap();
 
-        let cache = SearchCache::walk_fs(root.to_path_buf());
+        let mut cache = SearchCache::walk_fs(root.to_path_buf());
 
         // Query for the deep file directly
         let results_deep_file = cache.query_files("gamma_file.txt".to_string()).unwrap();
