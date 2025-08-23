@@ -31,22 +31,30 @@ export function useAppState() {
 export function useSearch(setResults, lruCache) {
   const debounceTimerRef = useRef(null);
   const [currentQuery, setCurrentQuery] = useState('');
+  const [hasInitialSearchRun, setHasInitialSearchRun] = useState(false);
 
   const handleSearch = useCallback(async (query) => {
     let searchResults = [];
-    if (query.trim() !== '') {
-      searchResults = await invoke("search", { query });
-    }
+    searchResults = await invoke("search", { query });
     lruCache.current.clear();
     setResults(searchResults);
     setCurrentQuery(query.trim());
   }, [setResults, lruCache]);
 
+  // 应用启动时发送空查询
+  useEffect(() => {
+    if (!hasInitialSearchRun) {
+      handleSearch("");
+      setHasInitialSearchRun(true);
+    }
+  }, [handleSearch, hasInitialSearchRun]);
+
   const onQueryChange = useCallback((e) => {
-    const currentQuery = e.target.value;
+    const inputValue = e.target.value;
     clearTimeout(debounceTimerRef.current);
+    
     debounceTimerRef.current = setTimeout(() => {
-      handleSearch(currentQuery);
+      handleSearch(inputValue);
     }, SEARCH_DEBOUNCE_MS);
   }, [handleSearch]);
 

@@ -221,7 +221,11 @@ pub fn run() -> Result<()> {
                 }
                 recv(search_rx) -> query => {
                     let query = query.expect("Search channel closed");
-                    let result = cache.search(&query);
+                    let result = if query.is_empty() {
+                        Ok(cache.search_empty())
+                    } else {
+                        cache.search(&query)
+                    };
                     result_tx.send(result).expect("Failed to send result");
                 }
                 recv(node_info_rx) -> results => {

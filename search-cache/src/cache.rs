@@ -186,6 +186,10 @@ impl SearchCache {
         }
     }
 
+    pub fn search_empty(&self) -> Vec<usize> {
+        self.name_index.values().flatten().copied().collect::<Vec<_>>()
+    }
+
     pub fn search(&self, line: &str) -> Result<Vec<usize>> {
         let segments = query_segmentation(line);
         if segments.is_empty() {
