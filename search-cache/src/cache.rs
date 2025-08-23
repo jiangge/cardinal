@@ -26,6 +26,14 @@ pub struct SlabNode {
     metadata: SlabNodeMetadata,
 }
 
+impl SlabNode {
+    pub fn add_children(&mut self, children: usize) {
+        if !self.children.iter().any(|&x| x == children) {
+            self.children.push(children);
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Encode, Decode, Clone, Copy)]
 pub enum SlabNodeMetadata {
     Unaccessible,
@@ -155,7 +163,10 @@ impl SearchCache {
                 // The slab is newly constructed, thus though slab.iter() iterates all slots, it won't waste too much.
                 for (i, node) in slab.iter() {
                     if let Some(nodes) = name_index.get_mut(&node.name) {
+                        // 因为 slab 是新构建的，所以预期不会有重复
+                        // if !nodes.iter().any(|&x| x == i) {
                         nodes.push(i);
+                        // }
                     } else {
                         name_index.insert(node.name.clone(), vec![i]);
                     };
@@ -291,7 +302,9 @@ impl SearchCache {
         let node_name = node.name.clone();
         let index = self.slab.insert(node);
         if let Some(indexes) = self.name_index.get_mut(&node_name) {
-            indexes.push(index);
+            if !indexes.iter().any(|&x| x == index) {
+                indexes.push(index);
+            }
         } else {
             self.name_pool.push(&node_name);
             self.name_index.insert(node_name, vec![index]);
@@ -342,7 +355,7 @@ impl SearchCache {
                     metadata: SlabNodeMetadata::None,
                 };
                 let index = self.push_node(node);
-                self.slab[current].children.push(index);
+                self.slab[current].add_children(index);
                 index
             };
         }
@@ -385,7 +398,7 @@ impl SearchCache {
                 &mut self.name_pool,
             );
             // Push the newly created node to the parent's children
-            self.slab[parent].children.push(node);
+            self.slab[parent].add_children(node);
             node
         })
     }
