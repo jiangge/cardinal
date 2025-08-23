@@ -1,6 +1,6 @@
-use bincode::Encode;
+use bincode::{Decode, Encode};
 use rayon::{iter::ParallelBridge, prelude::ParallelIterator};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, Metadata},
     io::{Error, ErrorKind},
@@ -18,8 +18,9 @@ pub struct Node {
     pub metadata: Option<NodeMetadata>,
 }
 
-#[derive(Serialize, Encode, Debug)]
+#[derive(Debug, Serialize, Deserialize, Encode, Decode, Clone, Copy)]
 pub struct NodeMetadata {
+    pub r#type: NodeFileType,
     pub ctime: Option<u64>,
     pub mtime: Option<u64>,
     pub size: u64,
@@ -33,6 +34,7 @@ impl From<Metadata> for NodeMetadata {
 
 impl NodeMetadata {
     fn new(metadata: &Metadata) -> Self {
+        let r#type = metadata.file_type().into();
         let ctime = metadata
             .created()
             .ok()
@@ -44,7 +46,36 @@ impl NodeMetadata {
             .and_then(|x| x.duration_since(UNIX_EPOCH).ok())
             .map(|x| x.as_secs());
         let size = metadata.size();
-        Self { ctime, mtime, size }
+        Self {
+            r#type,
+            ctime,
+            mtime,
+            size,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Encode, Decode, Clone, Copy)]
+#[repr(u8)]
+pub enum NodeFileType {
+    // File occurs a lot, assign it to 0 for better compression ratio(I guess... maybe useful).
+    File = 0,
+    Dir = 1,
+    Symlink = 2,
+    Unknown = 3,
+}
+
+impl From<fs::FileType> for NodeFileType {
+    fn from(file_type: fs::FileType) -> Self {
+        if file_type.is_file() {
+            NodeFileType::File
+        } else if file_type.is_dir() {
+            NodeFileType::Dir
+        } else if file_type.is_symlink() {
+            NodeFileType::Symlink
+        } else {
+            NodeFileType::Unknown
+        }
     }
 }
 

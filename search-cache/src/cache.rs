@@ -3,7 +3,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use bincode::{Decode, Encode};
 use cardinal_sdk::{current_event_id, EventFlag, FsEvent, ScanType};
 pub use fswalk::WalkData;
-use fswalk::{walk_it, Node, NodeMetadata};
+use fswalk::{walk_it, Node, NodeFileType, NodeMetadata};
 use namepool::NamePool;
 use query_segmentation::{query_segmentation, Segment};
 use serde::{Deserialize, Serialize};
@@ -28,17 +28,26 @@ pub struct SlabNode {
 
 #[derive(Debug, Serialize, Deserialize, Encode, Decode, Clone, Copy)]
 pub struct SlabNodeMetadata {
+    pub r#type: NodeFileType,
     pub ctime: Option<u64>,
     pub mtime: Option<u64>,
     pub size: u64,
 }
 
 impl SlabNodeMetadata {
-    fn new(metadata: &NodeMetadata) -> Self {
+    fn new(
+        &NodeMetadata {
+            r#type,
+            ctime,
+            mtime,
+            size,
+        }: &NodeMetadata,
+    ) -> Self {
         Self {
-            ctime: metadata.ctime,
-            mtime: metadata.mtime,
-            size: metadata.size,
+            r#type,
+            ctime,
+            mtime,
+            size,
         }
     }
 }
