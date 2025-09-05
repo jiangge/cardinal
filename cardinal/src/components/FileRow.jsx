@@ -11,9 +11,13 @@ export function FileRow({ item, rowIndex, style, onContextMenu, searchQuery }) {
   const path = typeof item === 'string' ? item : item?.path;
   let filename = '', directoryPath = '';
   if (path) {
-    const parts = path.split(/[\\/]/);
-    filename = parts.pop() || '';
-    directoryPath = parts.join('/');
+    if (path === '/') {
+      directoryPath = '/';
+    } else {
+      const parts = path.split(/[\\/]/);
+      filename = parts.pop() || '';
+      directoryPath = parts.join('/');
+    }
   }
 
   const mtimeSec = typeof item !== 'string' ? (item?.metadata?.mtime ?? item?.mtime) : undefined;
