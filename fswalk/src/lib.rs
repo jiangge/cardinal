@@ -1,6 +1,7 @@
 use bincode::{Decode, Encode};
 use rayon::{iter::ParallelBridge, prelude::ParallelIterator};
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::{
     fs::{self, Metadata},
     io::{Error, ErrorKind},
@@ -56,7 +57,7 @@ impl NodeMetadata {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Encode, Decode, Clone, Copy)]
+#[derive(Debug, Serialize_repr, Deserialize_repr, Encode, Decode, Clone, Copy)]
 #[repr(u8)]
 pub enum NodeFileType {
     // File occurs a lot, assign it to 0 for better compression ratio(I guess... maybe useful).

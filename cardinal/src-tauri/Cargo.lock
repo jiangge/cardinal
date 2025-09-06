@@ -1132,6 +1132,7 @@ dependencies = [
  "memchr",
  "rayon",
  "serde",
+ "serde_repr",
 ]
 
 [[package]]
