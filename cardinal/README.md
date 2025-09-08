@@ -13,6 +13,7 @@
     - ctime
     - mtime
     - size
+- 搜索结果排序
 - metadata 启动后自动 fetching
 - Windows/NTFS 支持
 - native 内存泄漏排查
