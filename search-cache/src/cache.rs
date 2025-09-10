@@ -1,4 +1,7 @@
-use crate::persistent::{PersistentStorage, read_cache_from_file, write_cache_to_file};
+use crate::{
+    MetadataCache,
+    persistent::{PersistentStorage, read_cache_from_file, write_cache_to_file},
+};
 use anyhow::{Context, Result, anyhow, bail};
 use bincode::{Decode, Encode};
 use cardinal_sdk::{EventFlag, FsEvent, ScanType, current_event_id};
@@ -9,10 +12,9 @@ use query_segmentation::{Segment, query_segmentation};
 use serde::{Deserialize, Serialize};
 use slab::Slab;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     ffi::{CString, OsStr},
     io::ErrorKind,
-    num::NonZeroU32,
     path::{Path, PathBuf},
     time::Instant,
 };
@@ -342,7 +344,7 @@ impl SearchCache {
 
     fn push_node(&mut self, node: SlabNode) -> usize {
         let node_name = node.name.clone();
-        let node_metadata = node.metadata.as_ref().copied();
+        let node_metadata = node.metadata;
         let index = self.slab.insert(node);
         if let Some(indexes) = self.name_index.get_mut(&node_name) {
             if !indexes.iter().any(|&x| x == index) {
@@ -488,9 +490,7 @@ impl SearchCache {
                     // but currently name pool doesn't support remove. (GC is needed for name pool)
                     // self.name_pool.remove(&node.name);
                 }
-                cache
-                    .metadata_cache
-                    .remove(index, node.metadata.as_ref().copied());
+                cache.metadata_cache.remove(index, node.metadata);
             }
         }
 
@@ -578,7 +578,7 @@ impl SearchCache {
                                     Some(metadata) => SlabNodeMetadata::Some(metadata),
                                     None => SlabNodeMetadata::Unaccessible,
                                 };
-                                self.metadata_cache.insert(node_index, metadata);
+                                // self.metadata_cache.insert(node_index, metadata);
                                 metadata
                             } else {
                                 None
@@ -621,99 +621,6 @@ impl SearchCache {
             self.update_last_event_id(max_event_id);
         }
         Ok(())
-    }
-}
-
-#[derive(Encode, Decode)]
-pub struct MetadataCache {
-    ctime_index: BTreeMap<NonZeroU32, Vec<usize>>,
-    mtime_index: BTreeMap<NonZeroU32, Vec<usize>>,
-    size_index: BTreeMap<u64, Vec<usize>>,
-    /// For slab nodes without metadata
-    no_ctime_index: BTreeSet<usize>,
-    no_mtime_index: BTreeSet<usize>,
-    no_size_index: BTreeSet<usize>,
-}
-
-impl MetadataCache {
-    fn new() -> Self {
-        Self {
-            ctime_index: BTreeMap::new(),
-            mtime_index: BTreeMap::new(),
-            size_index: BTreeMap::new(),
-            no_ctime_index: BTreeSet::new(),
-            no_mtime_index: BTreeSet::new(),
-            no_size_index: BTreeSet::new(),
-        }
-    }
-
-    fn insert(&mut self, index: usize, metadata: Option<NodeMetadata>) {
-        if let Some(ctime) = metadata.and_then(|x| x.ctime) {
-            if let Some(indexes) = self.ctime_index.get_mut(&ctime) {
-                if !indexes.iter().any(|&x| x == index) {
-                    indexes.push(index);
-                }
-            } else {
-                self.ctime_index.insert(ctime, vec![index]);
-            }
-        } else {
-            self.no_ctime_index.insert(index);
-        }
-        if let Some(mtime) = metadata.and_then(|x| x.mtime) {
-            if let Some(indexes) = self.mtime_index.get_mut(&mtime) {
-                if !indexes.iter().any(|&x| x == index) {
-                    indexes.push(index);
-                }
-            } else {
-                self.mtime_index.insert(mtime, vec![index]);
-            }
-        } else {
-            self.no_mtime_index.insert(index);
-        }
-        if let Some(size) = metadata.map(|x| x.size()) {
-            if let Some(indexes) = self.size_index.get_mut(&size) {
-                if !indexes.iter().any(|&x| x == index) {
-                    indexes.push(index);
-                }
-            } else {
-                self.size_index.insert(size, vec![index]);
-            }
-        } else {
-            self.no_size_index.insert(index);
-        }
-    }
-
-    fn remove(&mut self, index: usize, metadata: Option<NodeMetadata>) {
-        if let Some(ctime) = metadata.and_then(|x| x.ctime) {
-            if let Some(indexes) = self.ctime_index.get_mut(&ctime) {
-                indexes.retain(|&x| x != index);
-                if indexes.is_empty() {
-                    self.ctime_index.remove(&ctime);
-                }
-            }
-        } else {
-            self.no_ctime_index.remove(&index);
-        }
-        if let Some(mtime) = metadata.and_then(|x| x.mtime) {
-            if let Some(indexes) = self.mtime_index.get_mut(&mtime) {
-                indexes.retain(|&x| x != index);
-                if indexes.is_empty() {
-                    self.mtime_index.remove(&mtime);
-                }
-            }
-        } else {
-            self.no_mtime_index.remove(&index);
-        }
-        if let Some(size) = metadata.map(|x| x.size()) {
-            if let Some(indexes) = self.size_index.get_mut(&size) {
-                indexes.retain(|&x| x != index);
-                if indexes.is_empty() {
-                    self.size_index.remove(&size);
-                }
-            }
-        } else {
-            self.no_size_index.remove(&index);
-        }
     }
 }
 
