@@ -1,7 +1,4 @@
-use crate::{
-    MetadataCache,
-    persistent::{PersistentStorage, read_cache_from_file, write_cache_to_file},
-};
+use crate::persistent::{PersistentStorage, read_cache_from_file, write_cache_to_file};
 use anyhow::{Context, Result, anyhow, bail};
 use bincode::{Decode, Encode};
 use cardinal_sdk::{EventFlag, FsEvent, ScanType, current_event_id};
@@ -97,8 +94,6 @@ pub struct SearchCache {
     slab: Slab<SlabNode>,
     name_index: BTreeMap<String, Vec<usize>>,
     name_pool: NamePool,
-    // Start initializing aftr cache initialized, update on fsevent, and slowly build from slab root.
-    metadata_cache: MetadataCache,
 }
 
 impl std::fmt::Debug for SearchCache {
@@ -137,7 +132,6 @@ impl SearchCache {
                      slab,
                      name_index,
                      last_event_id,
-                     metadata_cache,
                  }| {
                     Self::new(
                         path,
@@ -145,7 +139,6 @@ impl SearchCache {
                         slab_root,
                         slab,
                         name_index,
-                        metadata_cache,
                     )
                 },
             )
@@ -222,14 +215,7 @@ impl SearchCache {
         let (slab_root, slab) = walkfs_to_slab(&path, walk_data);
         let name_index = name_index(&slab);
         // metadata cache inits later
-        Self::new(
-            path,
-            last_event_id,
-            slab_root,
-            slab,
-            name_index,
-            MetadataCache::new(),
-        )
+        Self::new(path, last_event_id, slab_root, slab, name_index)
     }
 
     pub fn new(
@@ -238,7 +224,6 @@ impl SearchCache {
         slab_root: usize,
         slab: Slab<SlabNode>,
         name_index: BTreeMap<String, Vec<usize>>,
-        metadata_cache: MetadataCache,
     ) -> Self {
         // name pool construction speed is fast enough that caching it doesn't worth it.
         let name_pool = name_pool(&name_index);
@@ -249,7 +234,6 @@ impl SearchCache {
             slab,
             name_index,
             name_pool,
-            metadata_cache,
         }
     }
 
@@ -344,7 +328,6 @@ impl SearchCache {
 
     fn push_node(&mut self, node: SlabNode) -> usize {
         let node_name = node.name.clone();
-        let node_metadata = node.metadata;
         let index = self.slab.insert(node);
         if let Some(indexes) = self.name_index.get_mut(&node_name) {
             if !indexes.iter().any(|&x| x == index) {
@@ -354,7 +337,6 @@ impl SearchCache {
             self.name_pool.push(&node_name);
             self.name_index.insert(node_name, vec![index]);
         }
-        self.metadata_cache.insert(index, node_metadata);
         index
     }
 
@@ -490,7 +472,6 @@ impl SearchCache {
                     // but currently name pool doesn't support remove. (GC is needed for name pool)
                     // self.name_pool.remove(&node.name);
                 }
-                cache.metadata_cache.remove(index, node.metadata);
             }
         }
 
@@ -513,7 +494,6 @@ impl SearchCache {
             slab,
             name_index,
             name_pool: _,
-            metadata_cache,
         } = self;
         write_cache_to_file(
             cache_path,
@@ -524,7 +504,6 @@ impl SearchCache {
                 slab,
                 name_index,
                 last_event_id,
-                metadata_cache,
             },
         )
         .context("Write cache to file failed.")
