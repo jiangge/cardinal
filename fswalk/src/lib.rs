@@ -1,6 +1,5 @@
 mod type_and_size;
 
-use bincode::{Decode, Encode};
 use rayon::{iter::ParallelBridge, prelude::ParallelIterator};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -14,7 +13,7 @@ use std::{
 };
 use type_and_size::{NodeFileType, TypeAndSize};
 
-#[derive(Serialize, Encode, Debug)]
+#[derive(Serialize, Debug)]
 pub struct Node {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<Node>,
@@ -22,7 +21,7 @@ pub struct Node {
     pub metadata: Option<NodeMetadata>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Encode, Decode, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct NodeMetadata {
     pub type_and_size: TypeAndSize,
     pub ctime: Option<NonZeroU32>,

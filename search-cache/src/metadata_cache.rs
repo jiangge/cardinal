@@ -1,12 +1,11 @@
 use crate::SlabNodeMetadata;
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
     num::NonZeroU32,
 };
 
-#[derive(Debug, Serialize, Deserialize, Encode, Decode, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct MetadataCache {
     ctime_index: BTreeMap<NonZeroU32, Vec<usize>>,
     mtime_index: BTreeMap<NonZeroU32, Vec<usize>>,

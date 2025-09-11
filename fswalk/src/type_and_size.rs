@@ -1,9 +1,8 @@
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::fs;
 
-#[derive(Debug, Serialize, Deserialize, Encode, Decode, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 #[serde(transparent)]
 /// type in the high 2 bits, size in the low 46 bits(64T-1 max)
 pub struct TypeAndSize([u8; 6]);
@@ -29,7 +28,7 @@ impl TypeAndSize {
 }
 
 #[derive(
-    Debug, Serialize_repr, Deserialize_repr, Encode, Decode, Clone, Copy, enumn::N, PartialEq, Eq,
+    Debug, Serialize_repr, Deserialize_repr, Clone, Copy, enumn::N, PartialEq, Eq,
 )]
 #[repr(u8)]
 pub enum NodeFileType {

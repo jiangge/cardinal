@@ -3,7 +3,6 @@ use crate::{
     persistent::{PersistentStorage, read_cache_from_file, write_cache_to_file},
 };
 use anyhow::{Context, Result, anyhow, bail};
-use bincode::{Decode, Encode};
 use cardinal_sdk::{EventFlag, FsEvent, ScanType, current_event_id};
 pub use fswalk::WalkData;
 use fswalk::{Node, NodeMetadata, walk_it};
@@ -20,7 +19,7 @@ use std::{
 use tracing::{debug, info};
 use typed_num::Num;
 
-#[derive(Debug, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SlabNode {
     parent: OptionSlabIndex,
     children: Vec<SlabIndex>,
@@ -49,7 +48,7 @@ impl SlabNode {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Encode, Decode, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub enum SlabNodeMetadata {
     Unaccessible,
     Some(NodeMetadata),
