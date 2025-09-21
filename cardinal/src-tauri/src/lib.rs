@@ -317,7 +317,7 @@ pub fn run() -> Result<()> {
                     let result = if query.is_empty() {
                         Ok(cache.search_empty())
                     } else {
-                        cache.search(&query).map(|x| x.into_iter().collect())
+                        cache.search(&query)
                     };
                     result_tx.send(result).expect("Failed to send result");
                 }

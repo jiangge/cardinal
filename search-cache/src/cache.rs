@@ -12,7 +12,7 @@ use namepool::NamePool;
 use query_segmentation::{Segment, query_segmentation};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     ffi::{CString, OsStr},
     io::ErrorKind,
     num::NonZeroU32,
@@ -346,16 +346,16 @@ impl SearchCache {
         self.name_index.values().flatten().copied().collect()
     }
 
-    pub fn search(&self, line: &str) -> Result<HashSet<SlabIndex>> {
+    pub fn search(&self, line: &str) -> Result<Vec<SlabIndex>> {
         let segments = query_segmentation(line);
         if segments.is_empty() {
             bail!("Unprocessable query: {:?}", line);
         }
         let search_time = Instant::now();
-        let mut node_set: Option<HashSet<SlabIndex>> = None;
+        let mut node_set: Option<Vec<SlabIndex>> = None;
         for segment in &segments {
             if let Some(nodes) = &node_set {
-                let mut new_node_set = HashSet::with_capacity(nodes.len());
+                let mut new_node_set = Vec::with_capacity(nodes.len());
                 for &node in nodes {
                     let childs = &self.slab[node].children;
                     for &child in childs {
@@ -365,13 +365,16 @@ impl SearchCache {
                             Segment::Exact(exact) => &*self.slab[child].name == *exact,
                             Segment::Suffix(suffix) => self.slab[child].name.ends_with(*suffix),
                         } {
-                            new_node_set.insert(child);
+                            new_node_set.push(child);
                         }
                     }
                 }
                 node_set = Some(new_node_set);
             } else {
-                let names: Vec<_> = match segment {
+                // Use BTreeSet here to:
+                // 1. deduplicate names
+                // 2. keep the search result in order
+                let names: BTreeSet<_> = match segment {
                     Segment::Substr(substr) => self.name_pool.search_substr(substr).collect(),
                     Segment::Prefix(prefix) => {
                         let mut buffer = Vec::with_capacity(prefix.len() + 1);
@@ -392,7 +395,7 @@ impl SearchCache {
                         self.name_pool.search_suffix(&suffix).collect()
                     }
                 };
-                let mut nodes = HashSet::with_capacity(names.len());
+                let mut nodes = Vec::with_capacity(names.len());
                 names.into_iter().for_each(|name| {
                     // namepool doesn't shrink, so it can contains non-existng names. Therefore, we don't error out on None branch here.
                     if let Some(x) = self.name_index.get(name) {

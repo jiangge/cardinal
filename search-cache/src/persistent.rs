@@ -1,5 +1,6 @@
 use crate::{SlabIndex, ThinSlab, cache::SlabNode};
 use anyhow::{Context, Result};
+use hashbrown::HashSet;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -9,7 +10,6 @@ use std::{
     thread::available_parallelism,
     time::Instant,
 };
-use hashbrown::HashSet;
 use tracing::info;
 use typed_num::Num;
 
