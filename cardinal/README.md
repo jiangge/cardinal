@@ -55,6 +55,8 @@
 + 为什么扫描 /Library/Developer/CoreSimulator/Volumes/iOS_23A343 是单线程的？
 + 考虑类LSM/WAL设计?
 + icon 抓取之后异步 push，有些icon取得挺慢的
++ 重启+reopen window之后会很慢
++ 一个全局 string池，生命周期类似于 allocator，
 
 ```bash
 npm run tauri dev -- --release --features dev
