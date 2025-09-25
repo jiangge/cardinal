@@ -32,6 +32,10 @@ impl NamePool {
         self.inner.lock().len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.inner.lock().is_empty()
+    }
+
     /// This function add a name into last cache line, if the last cache line is
     /// full, a new cache line will be added.
     ///
@@ -59,10 +63,8 @@ impl NamePool {
         self.inner
             .lock()
             .iter()
-            .filter_map(|x| {
-                x.contains(substr)
-                    .then(|| unsafe { str::from_raw_parts(x.as_ptr(), x.len()) })
-            })
+            .filter(|&x| x.contains(substr))
+            .map(|x| unsafe { str::from_raw_parts(x.as_ptr(), x.len()) })
             .collect()
     }
 
@@ -73,10 +75,8 @@ impl NamePool {
         self.inner
             .lock()
             .iter()
-            .filter_map(|x| {
-                x.ends_with(suffix)
-                    .then(|| unsafe { str::from_raw_parts(x.as_ptr(), x.len()) })
-            })
+            .filter(|&x| x.ends_with(suffix))
+            .map(|x| unsafe { str::from_raw_parts(x.as_ptr(), x.len()) })
             .collect()
     }
 
@@ -87,10 +87,8 @@ impl NamePool {
         self.inner
             .lock()
             .iter()
-            .filter_map(|x| {
-                x.starts_with(prefix)
-                    .then(|| unsafe { str::from_raw_parts(x.as_ptr(), x.len()) })
-            })
+            .filter(|&x| x.starts_with(prefix))
+            .map(|x| unsafe { str::from_raw_parts(x.as_ptr(), x.len()) })
             .collect()
     }
 
@@ -103,9 +101,8 @@ impl NamePool {
         self.inner
             .lock()
             .iter()
-            .filter_map(|x| {
-                (&**x == exact).then(|| unsafe { str::from_raw_parts(x.as_ptr(), x.len()) })
-            })
+            .filter(|&x| (&**x == exact))
+            .map(|x| unsafe { str::from_raw_parts(x.as_ptr(), x.len()) })
             .collect()
     }
 }

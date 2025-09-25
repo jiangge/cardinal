@@ -1,7 +1,6 @@
 use crate::{
-    SlabIndex, State, ThinSlab,
+    SearchResultNode, SlabIndex, SlabNode, SlabNodeMetadataCompact, State, ThinSlab,
     persistent::{PersistentStorage, read_cache_from_file, write_cache_to_file},
-    SlabNode, SlabNodeMetadataCompact, SearchResultNode,
 };
 use anyhow::{Context, Result, anyhow, bail};
 use cardinal_sdk::{EventFlag, FsEvent, ScanType, current_event_id};
@@ -231,7 +230,9 @@ impl SearchCache {
                             Segment::Prefix(prefix) => {
                                 self.slab[child].name_and_parent.starts_with(*prefix)
                             }
-                            Segment::Exact(exact) => self.slab[child].name_and_parent.as_str() == *exact,
+                            Segment::Exact(exact) => {
+                                self.slab[child].name_and_parent.as_str() == *exact
+                            }
                             Segment::Suffix(suffix) => {
                                 self.slab[child].name_and_parent.ends_with(*suffix)
                             }
@@ -247,9 +248,9 @@ impl SearchCache {
                 // 2. keep the search result in order
                 let names: BTreeSet<_> = match segment {
                     Segment::Substr(substr) => NAME_POOL.search_substr(substr),
-                    Segment::Prefix(prefix) => NAME_POOL.search_prefix(*prefix),
-                    Segment::Exact(exact) => NAME_POOL.search_exact(*exact),
-                    Segment::Suffix(suffix) => NAME_POOL.search_suffix(*suffix),
+                    Segment::Prefix(prefix) => NAME_POOL.search_prefix(prefix),
+                    Segment::Exact(exact) => NAME_POOL.search_exact(exact),
+                    Segment::Suffix(suffix) => NAME_POOL.search_suffix(suffix),
                 };
                 let mut nodes = Vec::with_capacity(names.len());
                 names.into_iter().for_each(|name| {
@@ -278,13 +279,13 @@ impl SearchCache {
         Some(
             self.path
                 .iter()
-                .chain(segments.iter().rev().map(|x| OsStr::new(x)))
+                .chain(segments.iter().rev().map(OsStr::new))
                 .collect(),
         )
     }
 
     fn push_node(&mut self, node: SlabNode) -> SlabIndex {
-        let node_name = node.name_and_parent.clone();
+        let node_name = node.name_and_parent;
         let index = self.slab.insert(node);
         if let Some(indexes) = self.name_index.get_mut(&*node_name) {
             indexes.insert(index);
@@ -518,7 +519,7 @@ impl SearchCache {
                                 node.metadata = metadata;
                                 metadata
                             }
-                            _ => node.metadata.clone(),
+                            _ => node.metadata,
                         }
                     })
                     .unwrap_or_else(SlabNodeMetadataCompact::unaccessible);
@@ -628,7 +629,7 @@ fn construct_node_slab(
         Some(metadata) => SlabNodeMetadataCompact::some(metadata),
         None => SlabNodeMetadataCompact::none(),
     };
-    let name = NAME_POOL.push(&*node.name);
+    let name = NAME_POOL.push(&node.name);
     let slab_node = SlabNode::new(parent, name, metadata);
     let index = slab.insert(slab_node);
     slab[index].children = node
@@ -654,7 +655,7 @@ impl SearchCache {
             // This function should only be called with Node fetched with metadata
             None => SlabNodeMetadataCompact::unaccessible(),
         };
-        let name = NAME_POOL.push(&*node.name);
+        let name = NAME_POOL.push(&node.name);
         let slab_node = SlabNode::new(parent, name, metadata);
         let index = self.push_node(slab_node);
         self.slab[index].children = node

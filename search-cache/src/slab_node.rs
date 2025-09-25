@@ -1,4 +1,8 @@
-use serde::{Deserialize, Serialize, de::{self, SeqAccess, Visitor}, ser::SerializeTuple};
+use serde::{
+    Deserialize, Serialize,
+    de::{self, SeqAccess, Visitor},
+    ser::SerializeTuple,
+};
 use std::{fmt, num::NonZeroU32};
 use thin_vec::ThinVec;
 
@@ -11,7 +15,7 @@ pub struct NameAndParent {
 
 unsafe impl Send for NameAndParent {}
 
-impl<'ser> Serialize for NameAndParent {
+impl Serialize for NameAndParent {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,

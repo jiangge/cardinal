@@ -86,6 +86,10 @@ impl<T> ThinSlab<T> {
         self.0.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     pub fn iter(&self) -> ThinSlabIter<'_, T> {
         ThinSlabIter(self.0.iter())
     }

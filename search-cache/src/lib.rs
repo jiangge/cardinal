@@ -2,8 +2,8 @@
 mod cache;
 mod metadata_cache;
 mod persistent;
-mod slab_node;
 mod slab;
+mod slab_node;
 mod type_and_size;
 
 pub use cache::*;

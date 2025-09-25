@@ -69,9 +69,7 @@ impl EventFlag {
     pub fn scan_type(&self) -> ScanType {
         let event_type = self.event_type();
         let is_dir = matches!(event_type, EventType::Dir);
-        if self.contains(EventFlag::HistoryDone) {
-            ScanType::Nop
-        } else if self.contains(EventFlag::EventIdsWrapped) {
+        if self.contains(EventFlag::HistoryDone) | self.contains(EventFlag::EventIdsWrapped) {
             ScanType::Nop
         } else if self.contains(EventFlag::RootChanged) {
             ScanType::ReScan
