@@ -1,4 +1,4 @@
-use crate::{SlabIndex, ThinSlab, cache::SlabNode};
+use crate::{SlabIndex, ThinSlab, SlabNode};
 use anyhow::{Context, Result};
 use hashbrown::HashSet;
 use serde::{Deserialize, Serialize};

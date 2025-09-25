@@ -37,7 +37,7 @@ impl OptionSlabIndex {
 pub struct SlabIndex(u32);
 
 impl SlabIndex {
-    fn new(index: usize) -> Self {
+    pub fn new(index: usize) -> Self {
         assert!(
             index < u32::MAX as usize,
             "slab index must be less than u32::MAX"
@@ -45,7 +45,7 @@ impl SlabIndex {
         Self(index as u32)
     }
 
-    fn get(&self) -> usize {
+    pub fn get(&self) -> usize {
         self.0 as usize
     }
 }

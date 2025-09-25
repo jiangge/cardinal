@@ -1,26 +1,19 @@
 use crate::{
-    OptionSlabIndex, SlabIndex, State, ThinSlab,
+    SlabIndex, State, ThinSlab,
     persistent::{PersistentStorage, read_cache_from_file, write_cache_to_file},
-    type_and_size::StateTypeSize,
+    SlabNode, SlabNodeMetadataCompact, SearchResultNode,
 };
 use anyhow::{Context, Result, anyhow, bail};
 use cardinal_sdk::{EventFlag, FsEvent, ScanType, current_event_id};
 pub use fswalk::WalkData;
-use fswalk::{Node, NodeFileType, NodeMetadata, walk_it};
+use fswalk::{Node, NodeMetadata, walk_it};
 use hashbrown::HashSet;
 use namepool::NamePool;
 use query_segmentation::{Segment, query_segmentation};
-use serde::{
-    Deserialize, Serialize,
-    de::{self, SeqAccess, Visitor},
-    ser::SerializeTuple,
-};
 use std::{
     collections::{BTreeMap, BTreeSet},
     ffi::OsStr,
-    fmt,
     io::ErrorKind,
-    num::NonZeroU32,
     path::{Path, PathBuf},
     sync::{LazyLock, atomic::AtomicBool},
     time::Instant,
@@ -28,216 +21,6 @@ use std::{
 use thin_vec::ThinVec;
 use tracing::{debug, info};
 use typed_num::Num;
-
-#[derive(Debug, Clone, Copy)]
-struct NameAndParent {
-    ptr: *const u8,
-    len: u8,
-    parent: OptionSlabIndex,
-}
-
-unsafe impl Send for NameAndParent {}
-
-impl<'ser> Serialize for NameAndParent {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut s = serializer.serialize_tuple(2)?;
-        s.serialize_element(self.as_str())?;
-        s.serialize_element(&self.parent)?;
-        s.end()
-    }
-}
-
-impl<'de> serde::de::Deserialize<'de> for NameAndParent {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::de::Deserializer<'de>,
-    {
-        struct NameAndParentVisitor;
-
-        impl<'de> Visitor<'de> for NameAndParentVisitor {
-            type Value = NameAndParent;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a tuple of (string, OptionSlabIndex)")
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: SeqAccess<'de>,
-            {
-                let name: String = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
-                let parent: OptionSlabIndex = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
-
-                let name_in_pool = NAME_POOL.push(&name);
-
-                Ok(NameAndParent::new(name_in_pool, parent))
-            }
-        }
-
-        deserializer.deserialize_tuple(2, NameAndParentVisitor)
-    }
-}
-
-impl std::ops::Deref for NameAndParent {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        self.as_str()
-    }
-}
-
-impl NameAndParent {
-    pub fn new(s: &'static str, parent: OptionSlabIndex) -> Self {
-        Self {
-            ptr: s.as_ptr(),
-            len: s
-                .len()
-                .try_into()
-                .expect("get filename larger than 256 bytes"),
-            parent,
-        }
-    }
-
-    pub fn as_str(&self) -> &'static str {
-        unsafe { std::str::from_raw_parts(self.ptr, self.len as usize) }
-    }
-
-    pub fn parent(&self) -> Option<SlabIndex> {
-        self.parent.to_option()
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SlabNode {
-    name_and_parent: NameAndParent,
-    children: ThinVec<SlabIndex>,
-    metadata: SlabNodeMetadataCompact,
-}
-
-impl SlabNode {
-    pub fn add_children(&mut self, children: SlabIndex) {
-        if !self.children.contains(&children) {
-            self.children.push(children);
-        }
-    }
-
-    pub fn new(
-        parent: Option<SlabIndex>,
-        name: &'static str,
-        metadata: SlabNodeMetadataCompact,
-    ) -> Self {
-        Self {
-            name_and_parent: NameAndParent::new(name, OptionSlabIndex::from_option(parent)),
-            children: ThinVec::new(),
-            metadata,
-        }
-    }
-}
-
-/// SlabNodeMetadataCompact with state ensured to be Some
-pub struct SlabNodeMetadata<'a>(&'a SlabNodeMetadataCompact);
-
-impl<'a> SlabNodeMetadata<'a> {
-    pub fn r#type(&self) -> NodeFileType {
-        self.0.state_type_and_size.r#type()
-    }
-
-    pub fn size(&self) -> u64 {
-        self.0.state_type_and_size.size()
-    }
-
-    pub fn ctime(&self) -> Option<NonZeroU32> {
-        NonZeroU32::new(self.0.ctime)
-    }
-
-    pub fn mtime(&self) -> Option<NonZeroU32> {
-        NonZeroU32::new(self.0.mtime)
-    }
-}
-
-/// Use a compact form so that
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
-pub struct SlabNodeMetadataCompact {
-    state_type_and_size: StateTypeSize,
-    // Actually a Option<NonZeroU32>, but using u32 here due to https://github.com/serde-rs/serde/issues/1834
-    ctime: u32,
-    mtime: u32,
-}
-
-impl SlabNodeMetadataCompact {
-    pub fn unaccessible() -> Self {
-        Self {
-            state_type_and_size: StateTypeSize::unaccessible(),
-            ctime: 0,
-            mtime: 0,
-        }
-    }
-
-    pub fn some(
-        NodeMetadata {
-            r#type,
-            size,
-            ctime,
-            mtime,
-        }: NodeMetadata,
-    ) -> Self {
-        Self {
-            state_type_and_size: StateTypeSize::some(r#type, size),
-            ctime: ctime
-                .and_then(|x| NonZeroU32::try_from(x).ok())
-                .map(|x| x.get())
-                .unwrap_or_default(),
-            mtime: mtime
-                .and_then(|x| NonZeroU32::try_from(x).ok())
-                .map(|x| x.get())
-                .unwrap_or_default(),
-        }
-    }
-
-    pub fn none() -> Self {
-        Self {
-            state_type_and_size: StateTypeSize::none(),
-            ctime: 0,
-            mtime: 0,
-        }
-    }
-
-    pub fn state(&self) -> State {
-        self.state_type_and_size.state()
-    }
-
-    pub fn as_ref(&self) -> Option<SlabNodeMetadata<'_>> {
-        match self.state() {
-            State::Some => Some(SlabNodeMetadata(self)),
-            State::Unaccessible | State::None => None,
-        }
-    }
-
-    pub fn is_some(&self) -> bool {
-        matches!(self.state(), State::Some)
-    }
-
-    pub fn is_none(&self) -> bool {
-        matches!(self.state(), State::None)
-    }
-
-    pub fn is_unaccessible(&self) -> bool {
-        matches!(self.state(), State::Unaccessible)
-    }
-}
-
-#[derive(Debug)]
-pub struct SearchResultNode {
-    pub path: PathBuf,
-    pub metadata: SlabNodeMetadataCompact,
-}
 
 pub struct SearchCache {
     path: PathBuf,
@@ -440,7 +223,7 @@ impl SearchCache {
                 let mut new_node_set = Vec::with_capacity(nodes.len());
                 for &node in nodes {
                     let childs = &self.slab[node].children;
-                    for &child in childs {
+                    for &child in childs.iter() {
                         if match segment {
                             Segment::Substr(substr) => {
                                 self.slab[child].name_and_parent.contains(*substr)
@@ -448,7 +231,7 @@ impl SearchCache {
                             Segment::Prefix(prefix) => {
                                 self.slab[child].name_and_parent.starts_with(*prefix)
                             }
-                            Segment::Exact(exact) => &*self.slab[child].name_and_parent == *exact,
+                            Segment::Exact(exact) => self.slab[child].name_and_parent.as_str() == *exact,
                             Segment::Suffix(suffix) => {
                                 self.slab[child].name_and_parent.ends_with(*suffix)
                             }
@@ -521,7 +304,7 @@ impl SearchCache {
             if let Some(&index) = self.slab[current]
                 .children
                 .iter()
-                .find(|&&x| &*self.slab[x].name_and_parent == name)
+                .find(|&&x| self.slab[x].name_and_parent.as_str() == name)
             {
                 current = index;
             } else {
@@ -587,7 +370,7 @@ impl SearchCache {
         if let Some(&old_node) = self.slab[parent]
             .children
             .iter()
-            .find(|&&x| path.file_name() == Some(OsStr::new(&*self.slab[x].name_and_parent)))
+            .find(|&&x| path.file_name() == Some(OsStr::new(self.slab[x].name_and_parent.as_str())))
         {
             self.remove_node(old_node);
         }
@@ -637,11 +420,11 @@ impl SearchCache {
             if let Some(node) = cache.slab.try_remove(index) {
                 let indexes = cache
                     .name_index
-                    .get_mut(&*node.name_and_parent)
+                    .get_mut(node.name_and_parent.as_str())
                     .expect("inconsistent name index and node");
                 indexes.remove(&index);
                 if indexes.is_empty() {
-                    cache.name_index.remove(&*node.name_and_parent);
+                    cache.name_index.remove(node.name_and_parent.as_str());
                     // TODO(ldm0): actually we need to remove name in the name pool,
                     // but currently name pool doesn't support remove. (GC is needed for name pool)
                     // self.name_pool.remove(&node.name);
@@ -735,7 +518,7 @@ impl SearchCache {
                                 node.metadata = metadata;
                                 metadata
                             }
-                            _ => node.metadata,
+                            _ => node.metadata.clone(),
                         }
                     })
                     .unwrap_or_else(SlabNodeMetadataCompact::unaccessible);
@@ -878,7 +661,7 @@ impl SearchCache {
             .children
             .iter()
             .map(|node| self.create_node_slab_update_name_index_and_name_pool(Some(index), node))
-            .collect();
+            .collect::<ThinVec<_>>();
         index
     }
 }
