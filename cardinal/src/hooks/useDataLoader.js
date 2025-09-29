@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 /**
@@ -7,14 +7,16 @@ import { invoke } from '@tauri-apps/api/core';
 export function useDataLoader(results) {
     const loadingRef = useRef(new Set());
     const versionRef = useRef(0);
+    const [cache, setCache] = useState(() => new Map());
 
     // 当 results 变化时清除加载状态
     useEffect(() => {
         versionRef.current += 1;
         loadingRef.current.clear();
+        setCache(new Map());
     }, [results]);
 
-    const ensureRangeLoaded = useCallback(async (start, end, cache, setCache) => {
+    const ensureRangeLoaded = useCallback(async (start, end) => {
         const total = results?.length ?? 0;
         if (!results || start < 0 || end < start || total === 0) return;
         const needLoading = [];
@@ -46,7 +48,7 @@ export function useDataLoader(results) {
             needLoading.forEach(i => loadingRef.current.delete(i));
             console.error('Failed loading rows', err);
         }
-    }, [results]);
+    }, [results, cache]);
 
-    return { ensureRangeLoaded };
+    return { cache, ensureRangeLoaded };
 }

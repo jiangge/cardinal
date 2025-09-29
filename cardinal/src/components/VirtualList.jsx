@@ -27,7 +27,6 @@ export const VirtualList = forwardRef(function VirtualList({
 	const lastScrollLeftRef = useRef(0);
 
 	// ----- state -----
-	const [cache, setCache] = useState(() => new Map());
 	const [scrollTop, setScrollTop] = useState(0);
 	const [viewportHeight, setViewportHeight] = useState(0);
 	const [range, setRange] = useState({ start: 0, end: -1 });
@@ -37,7 +36,7 @@ export const VirtualList = forwardRef(function VirtualList({
 	const rowCount = results?.length ?? 0;
 
 	// ----- data loader -----
-	const { ensureRangeLoaded } = useDataLoader(results);
+	const { cache, ensureRangeLoaded } = useDataLoader(results);
 
 	// 计算总虚拟高度和滚动范围
 	const totalHeight = rowCount * rowHeight;
@@ -82,15 +81,10 @@ export const VirtualList = forwardRef(function VirtualList({
 	}, [onScrollSync]);
 
 	// ----- effects -----
-	// 结果集变化时重置缓存
-	useEffect(() => { // results change -> reset cache
-		setCache(new Map());
-	}, [results]);
-
 	// range 变化时自动加载
 	useEffect(() => { // auto load
-		if (range.end >= range.start) ensureRangeLoaded(range.start, range.end, cache, setCache);
-	}, [range, ensureRangeLoaded, cache, setCache]);
+		if (range.end >= range.start) ensureRangeLoaded(range.start, range.end);
+	}, [range, ensureRangeLoaded]);
 
 	// 监听容器尺寸变化
 	useLayoutEffect(() => { // observe container height
@@ -117,8 +111,8 @@ export const VirtualList = forwardRef(function VirtualList({
 	// 暴露的API
 	useImperativeHandle(ref, () => ({
 		scrollToTop: () => updateScrollAndRange(0),
-		ensureRangeLoaded: (start, end) => ensureRangeLoaded(start, end, cache, setCache),
-	}), [updateScrollAndRange, ensureRangeLoaded, cache, setCache]);
+		ensureRangeLoaded,
+	}), [updateScrollAndRange, ensureRangeLoaded]);
 
 	// ----- rendered items memo -----
 	// 渲染的项目
