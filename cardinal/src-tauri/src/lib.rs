@@ -43,10 +43,15 @@ struct SearchOptionsPayload {
 }
 
 impl From<SearchOptionsPayload> for SearchOptions {
-    fn from(value: SearchOptionsPayload) -> Self {
+    fn from(
+        SearchOptionsPayload {
+            use_regex,
+            case_insensitive,
+        }: SearchOptionsPayload,
+    ) -> Self {
         SearchOptions {
-            use_regex: value.use_regex,
-            case_insensitive: value.case_insensitive,
+            use_regex,
+            case_insensitive,
         }
     }
 }
@@ -349,12 +354,12 @@ pub fn run() -> Result<()> {
 
     let app_handle = app.handle().to_owned();
     std::thread::scope(move |s| {
-        // 启动后台处理线程
+        // Init background event processing thread
         s.spawn(move || {
             const WATCH_ROOT: &str = "/";
             const FSE_LATENCY_SECS: f64 = 0.1;
             let path = PathBuf::from(WATCH_ROOT);
-            let emit_init = { LazyCell::new(|| app_handle.emit("init_completed", ()).unwrap()) };
+            let emit_init = LazyCell::new(|| app_handle.emit("init_completed", ()).unwrap());
             // 初始化搜索缓存
             let mut cache = match SearchCache::try_read_persistent_cache(
                 &path,
