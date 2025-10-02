@@ -37,15 +37,9 @@
 + 加一个页面渲染文件体积 treemap, 支持钻取（点击文件夹展开子项）。
     + 磁盘整理需求
 + 申请 macos 全盘访问权限: https://github.com/ayangweb/tauri-plugin-macos-permissions
-+ 内存优化:
-    + 更 Compact 的 SlabNode
-    + APFS 文件名长度最大只有 255 个字节(Linux 文件系统也是)
-        + 改成用 namepool 变成偏移可以 24 byte -> (usize + u16)10 byte
-        + https://superuser.com/questions/1561484/what-is-the-maximum-length-of-a-filename-apfs
-        + NamePool 需要增加全局单例(运行过程中不变，对去重有更高的要求了)，且内部结构需要改造（改造成链表 + 内存块）（类似于 allocator）
 + 考虑类LSM/WAL设计?
-+ icon 抓取之后异步 push，有些icon取得挺慢的
 + 重启+reopen window之后会很慢
++ viewport range + icon generation pool
 
 ```bash
 npm run tauri dev -- --release --features dev
