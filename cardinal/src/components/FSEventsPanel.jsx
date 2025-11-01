@@ -11,6 +11,8 @@ const COLUMNS = [
   { key: 'time', label: 'Time' },
 ];
 
+const BOTTOM_THRESHOLD = 50; // pixels from bottom to consider "at bottom"
+
 const splitPath = (path) => {
   if (!path) {
     return { name: '—', directory: '' };
@@ -98,6 +100,8 @@ const FSEventsPanel = forwardRef(({
 }, ref) => {
   const headerRef = useRef(null);
   const listRef = useRef(null);
+  const isAtBottomRef = useRef(true); // Track if user is viewing bottom
+  const prevEventsLengthRef = useRef(events.length);
 
   // Expose scrollToBottom method to parent
   useImperativeHandle(ref, () => ({
@@ -105,16 +109,20 @@ const FSEventsPanel = forwardRef(({
       const list = listRef.current;
       if (!list || events.length === 0) return;
       
-      // scrollToRow with 'end' alignment ensures the row is fully visible at the bottom
       list.scrollToRow(events.length - 1);
+      isAtBottomRef.current = true; // Mark as at bottom
     }
   }), [events.length]);
 
-  // Handle scrolling - sync horizontal scroll to header
-  const handleScroll = useCallback(({ scrollLeft }) => {
+  // Handle scrolling - sync horizontal scroll to header and track bottom position
+  const handleScroll = useCallback(({ scrollLeft, scrollTop, scrollHeight, clientHeight }) => {
     if (headerRef.current) {
       headerRef.current.scrollLeft = scrollLeft;
     }
+
+    // Check if user is at or near the bottom
+    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
+    isAtBottomRef.current = distanceFromBottom <= BOTTOM_THRESHOLD;
   }, []);
 
   // Render individual row
@@ -135,6 +143,30 @@ const FSEventsPanel = forwardRef(({
     },
     [events, onContextMenu, searchQuery, caseInsensitive],
   );
+
+  // Auto-scroll to bottom when new events arrive if user is at bottom
+  useEffect(() => {
+    const prevLength = prevEventsLengthRef.current;
+    const currentLength = events.length;
+
+    // Update the ref for next time
+    prevEventsLengthRef.current = currentLength;
+
+    // Only auto-scroll if:
+    // 1. There are new events (length increased)
+    // 2. User was at the bottom
+    if (currentLength > prevLength && isAtBottomRef.current) {
+      const list = listRef.current;
+      if (list && currentLength > 0) {
+        // Use queueMicrotask to ensure List has updated
+        queueMicrotask(() => {
+          if (listRef.current) {
+            listRef.current.scrollToRow(currentLength - 1);
+          }
+        });
+      }
+    }
+  }, [events.length]);
 
   return (
     <div className="events-panel-wrapper">
