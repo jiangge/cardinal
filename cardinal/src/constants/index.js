@@ -14,7 +14,6 @@ export const calculateInitialColWidths = (windowWidth) => {
   // 使用常量滚动条宽度（需与 CSS 中的 --virtual-scrollbar-width 保持一致）
   const availableWidth =
     windowWidth -
-    (Object.keys(COL_WIDTH_RATIOS).length - 1) * COL_GAP -
     COLUMNS_EXTRA -
     CONTAINER_PADDING -
     SCROLLBAR_WIDTH;
@@ -29,7 +28,6 @@ export const calculateInitialColWidths = (windowWidth) => {
   return calculatedWidths;
 };
 
-export const COL_GAP = 12;
 export const COLUMNS_EXTRA = 10; // 与 CSS --columns-extra 一致，避免多余宽度溢出
 export const ROW_HEIGHT = 24;
 export const CONTAINER_PADDING = 10;
