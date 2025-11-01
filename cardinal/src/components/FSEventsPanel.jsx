@@ -1,4 +1,11 @@
-import React, { useCallback, useRef, memo, useEffect, useImperativeHandle, forwardRef } from 'react';
+import React, {
+  useCallback,
+  useRef,
+  memo,
+  useEffect,
+  useImperativeHandle,
+  forwardRef,
+} from 'react';
 import AutoSizer from 'react-virtualized/dist/commonjs/AutoSizer';
 import List from 'react-virtualized/dist/commonjs/List';
 import 'react-virtualized/styles.css';
@@ -32,11 +39,18 @@ const splitPath = (path) => {
 };
 
 // EventRow component for rendering individual rows
-const EventRow = memo(function EventRow({ item: event, rowIndex, style, onContextMenu, searchQuery, caseInsensitive }) {
+const EventRow = memo(function EventRow({
+  item: event,
+  rowIndex,
+  style,
+  onContextMenu,
+  searchQuery,
+  caseInsensitive,
+}) {
   const pathSource = event?.path ?? '';
   const { name, directory } = splitPath(pathSource);
   const timestamp = event?.timestamp;
-  
+
   const formattedDate = formatTimestamp(timestamp) || '—';
 
   const handleContextMenu = useCallback(
@@ -73,144 +87,146 @@ const EventRow = memo(function EventRow({ item: event, rowIndex, style, onContex
   );
 });
 
-const FSEventsPanel = forwardRef(({
-  events,
-  onResizeStart,
-  onContextMenu,
-  onHeaderContextMenu,
-  searchQuery,
-  caseInsensitive,
-}, ref) => {
-  const headerRef = useRef(null);
-  const listRef = useRef(null);
-  const isAtBottomRef = useRef(true); // Track if user is viewing bottom
-  const prevEventsLengthRef = useRef(events.length);
+const FSEventsPanel = forwardRef(
+  (
+    { events, onResizeStart, onContextMenu, onHeaderContextMenu, searchQuery, caseInsensitive },
+    ref,
+  ) => {
+    const headerRef = useRef(null);
+    const listRef = useRef(null);
+    const isAtBottomRef = useRef(true); // Track if user is viewing bottom
+    const prevEventsLengthRef = useRef(events.length);
 
-  // Expose scrollToBottom method to parent
-  useImperativeHandle(ref, () => ({
-    scrollToBottom: () => {
+    // Expose scrollToBottom method to parent
+    useImperativeHandle(
+      ref,
+      () => ({
+        scrollToBottom: () => {
+          const list = listRef.current;
+          if (!list || events.length === 0) return;
+
+          list.scrollToRow(events.length - 1);
+          isAtBottomRef.current = true; // Mark as at bottom
+        },
+      }),
+      [events.length],
+    );
+
+    // Handle scrolling - sync horizontal scroll to header and track bottom position
+    const handleScroll = useCallback(({ scrollLeft, scrollTop, scrollHeight, clientHeight }) => {
+      // Check if user is at or near the bottom
+      const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
+      isAtBottomRef.current = distanceFromBottom <= BOTTOM_THRESHOLD;
+    }, []);
+
+    // Set up scroll listener on the actual Grid element for horizontal scroll sync
+    useEffect(() => {
       const list = listRef.current;
-      if (!list || events.length === 0) return;
-      
-      list.scrollToRow(events.length - 1);
-      isAtBottomRef.current = true; // Mark as at bottom
-    }
-  }), [events.length]);
+      if (!list || !list.Grid) return;
 
-  // Handle scrolling - sync horizontal scroll to header and track bottom position
-  const handleScroll = useCallback(({ scrollLeft, scrollTop, scrollHeight, clientHeight }) => {
-    // Check if user is at or near the bottom
-    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
-    isAtBottomRef.current = distanceFromBottom <= BOTTOM_THRESHOLD;
-  }, []);
+      const gridElement = list.Grid._scrollingContainer;
+      if (!gridElement) return;
 
-  // Set up scroll listener on the actual Grid element for horizontal scroll sync
-  useEffect(() => {
-    const list = listRef.current;
-    if (!list || !list.Grid) return;
+      const handleHorizontalScroll = () => {
+        if (headerRef.current && gridElement) {
+          headerRef.current.scrollLeft = gridElement.scrollLeft;
+        }
+      };
 
-    const gridElement = list.Grid._scrollingContainer;
-    if (!gridElement) return;
+      gridElement.addEventListener('scroll', handleHorizontalScroll);
+      return () => {
+        gridElement.removeEventListener('scroll', handleHorizontalScroll);
+      };
+    }, []);
 
-    const handleHorizontalScroll = () => {
-      if (headerRef.current && gridElement) {
-        headerRef.current.scrollLeft = gridElement.scrollLeft;
+    // Render individual row
+    const rowRenderer = useCallback(
+      ({ index, key, style }) => {
+        const event = events[index];
+        return (
+          <EventRow
+            key={key}
+            item={event}
+            rowIndex={index}
+            style={{ ...style, width: 'var(--columns-events-total)' }}
+            onContextMenu={onContextMenu}
+            searchQuery={searchQuery}
+            caseInsensitive={caseInsensitive}
+          />
+        );
+      },
+      [events, onContextMenu, searchQuery, caseInsensitive],
+    );
+
+    // Auto-scroll to bottom when new events arrive if user is at bottom
+    useEffect(() => {
+      const prevLength = prevEventsLengthRef.current;
+      const currentLength = events.length;
+
+      // Update the ref for next time
+      prevEventsLengthRef.current = currentLength;
+
+      // Only auto-scroll if:
+      // 1. There are new events (length increased)
+      // 2. User was at the bottom
+      if (currentLength > prevLength && isAtBottomRef.current) {
+        const list = listRef.current;
+        if (list && currentLength > 0) {
+          // Use queueMicrotask to ensure List has updated
+          queueMicrotask(() => {
+            if (listRef.current) {
+              listRef.current.scrollToRow(currentLength - 1);
+            }
+          });
+        }
       }
-    };
+    }, [events.length]);
 
-    gridElement.addEventListener('scroll', handleHorizontalScroll);
-    return () => {
-      gridElement.removeEventListener('scroll', handleHorizontalScroll);
-    };
-  }, []);
-
-  // Render individual row
-  const rowRenderer = useCallback(
-    ({ index, key, style }) => {
-      const event = events[index];
-      return (
-        <EventRow
-          key={key}
-          item={event}
-          rowIndex={index}
-          style={{ ...style, width: 'var(--columns-events-total)' }}
-          onContextMenu={onContextMenu}
-          searchQuery={searchQuery}
-          caseInsensitive={caseInsensitive}
-        />
-      );
-    },
-    [events, onContextMenu, searchQuery, caseInsensitive],
-  );
-
-  // Auto-scroll to bottom when new events arrive if user is at bottom
-  useEffect(() => {
-    const prevLength = prevEventsLengthRef.current;
-    const currentLength = events.length;
-
-    // Update the ref for next time
-    prevEventsLengthRef.current = currentLength;
-
-    // Only auto-scroll if:
-    // 1. There are new events (length increased)
-    // 2. User was at the bottom
-    if (currentLength > prevLength && isAtBottomRef.current) {
-      const list = listRef.current;
-      if (list && currentLength > 0) {
-        // Use queueMicrotask to ensure List has updated
-        queueMicrotask(() => {
-          if (listRef.current) {
-            listRef.current.scrollToRow(currentLength - 1);
-          }
-        });
-      }
-    }
-  }, [events.length]);
-
-  return (
-    <div className="events-panel-wrapper">
-      <div ref={headerRef} className="header-row-container">
-        <div className="header-row columns-events" onContextMenu={onHeaderContextMenu}>
-          {COLUMNS.map(({ key, label }, index) => (
-            <span key={key} className={`event-${key}-header header header-cell`}>
-              {label}
-              <span
-                className="col-resizer"
-                onMouseDown={(e) => onResizeStart(e, key)}
-                role="separator"
-                aria-orientation="vertical"
-              />
-            </span>
-          ))}
+    return (
+      <div className="events-panel-wrapper">
+        <div ref={headerRef} className="header-row-container">
+          <div className="header-row columns-events" onContextMenu={onHeaderContextMenu}>
+            {COLUMNS.map(({ key, label }, index) => (
+              <span key={key} className={`event-${key}-header header header-cell`}>
+                {label}
+                <span
+                  className="col-resizer"
+                  onMouseDown={(e) => onResizeStart(e, key)}
+                  role="separator"
+                  aria-orientation="vertical"
+                />
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="flex-fill">
+          {events.length === 0 ? (
+            <div className="events-empty" role="status">
+              <p>No recent file events yet.</p>
+              <p className="events-empty__hint">Keep working and check back for updates.</p>
+            </div>
+          ) : (
+            <AutoSizer>
+              {({ width, height }) => (
+                <List
+                  ref={listRef}
+                  width={width}
+                  height={height}
+                  rowCount={events.length}
+                  rowHeight={ROW_HEIGHT}
+                  rowRenderer={rowRenderer}
+                  onScroll={handleScroll}
+                  overscanRowCount={10}
+                  className="events-list"
+                />
+              )}
+            </AutoSizer>
+          )}
         </div>
       </div>
-      <div className="flex-fill">
-        {events.length === 0 ? (
-          <div className="events-empty" role="status">
-            <p>No recent file events yet.</p>
-            <p className="events-empty__hint">Keep working and check back for updates.</p>
-          </div>
-        ) : (
-          <AutoSizer>
-            {({ width, height }) => (
-              <List
-                ref={listRef}
-                width={width}
-                height={height}
-                rowCount={events.length}
-                rowHeight={ROW_HEIGHT}
-                rowRenderer={rowRenderer}
-                onScroll={handleScroll}
-                overscanRowCount={10}
-                className="events-list"
-              />
-            )}
-          </AutoSizer>
-        )}
-      </div>
-    </div>
-  );
-});
+    );
+  },
+);
 
 FSEventsPanel.displayName = 'FSEventsPanel';
 

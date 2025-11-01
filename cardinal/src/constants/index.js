@@ -12,10 +12,7 @@ export const COL_WIDTH_RATIOS = {
 // 根据窗口宽度计算初始列宽
 export const calculateInitialColWidths = (windowWidth) => {
   // 使用常量滚动条宽度（需与 CSS 中的 --virtual-scrollbar-width 保持一致）
-  const availableWidth =
-    windowWidth -
-    CONTAINER_PADDING -
-    SCROLLBAR_WIDTH;
+  const availableWidth = windowWidth - CONTAINER_PADDING - SCROLLBAR_WIDTH;
 
   const calculatedWidths = {};
 

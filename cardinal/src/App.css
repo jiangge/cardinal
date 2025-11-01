@@ -403,9 +403,9 @@ button:active {
 
 .header-row.columns {
   /* 表头比内容行多一列，用于填充滚动条位置 */
-  grid-template-columns: var(--w-filename) var(--w-path) var(--w-size) var(--w-modified) var(
-      --w-created
-    ) var(--virtual-scrollbar-width);
+  grid-template-columns:
+    var(--w-filename) var(--w-path) var(--w-size) var(--w-modified) var(--w-created)
+    var(--virtual-scrollbar-width);
 }
 
 .header {

@@ -25,7 +25,7 @@ const StatusBar = ({
       if (activeTabRef.current && tabsRef.current) {
         const tabRect = activeTabRef.current.getBoundingClientRect();
         const containerRect = tabsRef.current.getBoundingClientRect();
-        
+
         setSliderStyle({
           left: `${tabRect.left - containerRect.left}px`,
           width: `${tabRect.width}px`,

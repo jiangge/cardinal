@@ -98,14 +98,14 @@ function App() {
   const [eventFilterQuery, setEventFilterQuery] = useState('');
   const eventsPanelRef = useRef(null);
   const { colWidths, onResizeStart, autoFitColumns } = useColumnResize();
-  
+
   // Files context menu
-  const { 
-    menu: filesMenu, 
-    showContextMenu: showFilesContextMenu, 
-    showHeaderContextMenu: showFilesHeaderContextMenu, 
-    closeMenu: closeFilesMenu, 
-    getMenuItems: getFilesMenuItems 
+  const {
+    menu: filesMenu,
+    showContextMenu: showFilesContextMenu,
+    showHeaderContextMenu: showFilesHeaderContextMenu,
+    closeMenu: closeFilesMenu,
+    getMenuItems: getFilesMenuItems,
   } = useContextMenu(autoFitColumns);
 
   // Calculate event column widths based on ratios
@@ -114,7 +114,7 @@ function App() {
     return {
       time: Math.floor(totalWidth * 0.2),
       name: Math.floor(totalWidth * 0.3),
-      path: Math.floor(totalWidth * 0.50),
+      path: Math.floor(totalWidth * 0.5),
     };
   }, []);
 
@@ -155,18 +155,19 @@ function App() {
   }, [calculateEventColWidths]);
 
   // Events context menu
-  const { 
-    menu: eventsMenu, 
-    showContextMenu: showEventsContextMenu, 
-    showHeaderContextMenu: showEventsHeaderContextMenu, 
-    closeMenu: closeEventsMenu, 
-    getMenuItems: getEventsMenuItems 
+  const {
+    menu: eventsMenu,
+    showContextMenu: showEventsContextMenu,
+    showHeaderContextMenu: showEventsHeaderContextMenu,
+    closeMenu: closeEventsMenu,
+    getMenuItems: getEventsMenuItems,
   } = useContextMenu(autoFitEventColumns);
 
   // Unified menu interface based on active tab
   const menu = activeTab === 'events' ? eventsMenu : filesMenu;
   const showContextMenu = activeTab === 'events' ? showEventsContextMenu : showFilesContextMenu;
-  const showHeaderContextMenu = activeTab === 'events' ? showEventsHeaderContextMenu : showFilesHeaderContextMenu;
+  const showHeaderContextMenu =
+    activeTab === 'events' ? showEventsHeaderContextMenu : showFilesHeaderContextMenu;
   const closeMenu = activeTab === 'events' ? closeEventsMenu : closeFilesMenu;
   const getMenuItems = activeTab === 'events' ? getEventsMenuItems : getFilesMenuItems;
 
@@ -242,8 +243,8 @@ function App() {
             typeof rawEvent.event_id === 'number'
               ? rawEvent.event_id
               : typeof rawEvent.eventID === 'number'
-              ? rawEvent.eventID
-              : undefined;
+                ? rawEvent.eventID
+                : undefined;
 
           return eventId === undefined ? rawEvent : { ...rawEvent, eventId };
         };
@@ -283,7 +284,7 @@ function App() {
     }
 
     const query = eventFilterQuery;
-    
+
     // Use regex if enabled
     if (useRegex) {
       try {
@@ -299,7 +300,7 @@ function App() {
         return recentEvents;
       }
     }
-    
+
     // Simple string matching
     const searchQuery = caseSensitive ? query : query.toLowerCase();
     return recentEvents.filter((event) => {
@@ -307,10 +308,7 @@ function App() {
       const name = path.split('/').pop() || '';
       const testPath = caseSensitive ? path : path.toLowerCase();
       const testName = caseSensitive ? name : name.toLowerCase();
-      return (
-        testPath.includes(searchQuery) ||
-        testName.includes(searchQuery)
-      );
+      return testPath.includes(searchQuery) || testName.includes(searchQuery);
     });
   }, [recentEvents, eventFilterQuery, caseSensitive, useRegex]);
 
@@ -392,7 +390,7 @@ function App() {
   const onQueryChange = useCallback(
     (e) => {
       const inputValue = e.target.value;
-      
+
       if (activeTab === 'events') {
         // For events tab, just update the filter query (no debounce, instant filter)
         setEventFilterQuery(inputValue);
