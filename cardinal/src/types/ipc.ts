@@ -1,0 +1,23 @@
+import type { SlabIndex } from './slab';
+
+export type StatusBarUpdatePayload = {
+  scanned_files: number;
+  processed_events: number;
+};
+
+export type IconUpdateWirePayload = {
+  slabIndex: number;
+  icon?: string;
+};
+
+export type IconUpdatePayload = {
+  slabIndex: SlabIndex;
+  icon?: string;
+};
+
+export type RecentEventPayload = {
+  path: string;
+  flagBits: number;
+  eventId: number;
+  timestamp: number;
+};

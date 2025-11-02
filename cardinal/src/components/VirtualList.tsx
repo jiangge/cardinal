@@ -13,7 +13,8 @@ import { invoke } from '@tauri-apps/api/core';
 import type { CSSProperties, UIEvent as ReactUIEvent } from 'react';
 import Scrollbar from './Scrollbar';
 import { useDataLoader } from '../hooks/useDataLoader';
-import type { SearchResultItem } from './FileRow';
+import type { SearchResultItem } from '../types/search';
+import type { SlabIndex } from '../types/slab';
 
 export type VirtualListHandle = {
   scrollToTop: () => void;
@@ -21,10 +22,14 @@ export type VirtualListHandle = {
 };
 
 type VirtualListProps = {
-  results?: SearchResultItem[] | null;
+  results?: SlabIndex[];
   rowHeight?: number;
   overscan?: number;
-  renderRow: (rowIndex: number, item: SearchResultItem | undefined, rowStyle: CSSProperties) => React.ReactNode;
+  renderRow: (
+    rowIndex: number,
+    item: SearchResultItem | undefined,
+    rowStyle: CSSProperties,
+  ) => React.ReactNode;
   onScrollSync?: (scrollLeft: number) => void;
   className?: string;
 };
@@ -44,7 +49,7 @@ export const VirtualList = forwardRef<VirtualListHandle, VirtualListProps>(funct
 
   // ----- derived -----
   // Row count is inferred from the results array; explicit rowCount is no longer supported
-  const resultsList = Array.isArray(results) ? results : [];
+  const resultsList = results;
   const rowCount = resultsList.length;
 
   // ----- data loader -----
@@ -102,7 +107,7 @@ export const VirtualList = forwardRef<VirtualListHandle, VirtualListProps>(funct
   );
 
   // ----- effects -----
-  const updateIconViewport = useCallback((viewport: SearchResultItem[]) => {
+  const updateIconViewport = useCallback((viewport: SlabIndex[]) => {
     const requestId = iconRequestIdRef.current + 1;
     iconRequestIdRef.current = requestId;
     // Notify the backend which rows are visible so icon thumbnails can stream lazily
@@ -179,7 +184,7 @@ export const VirtualList = forwardRef<VirtualListHandle, VirtualListProps>(funct
     const baseTop = start * rowHeight - scrollTop;
     return Array.from({ length: end - start + 1 }, (_, i) => {
       const rowIndex = start + i;
-      const item = cache.get(rowIndex) ?? resultsList[rowIndex];
+      const item = cache.get(rowIndex);
       return renderRow(rowIndex, item, {
         position: 'absolute',
         top: baseTop + i * rowHeight,

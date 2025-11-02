@@ -2,26 +2,9 @@ import React, { useMemo, memo } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
 import { MiddleEllipsisHighlight } from './MiddleEllipsisHighlight';
 import { formatKB, formatTimestamp } from '../utils/format';
+import type { SearchResultItem } from '../types/search';
 
 const SEGMENT_SEPARATOR = /[\\/]+/;
-
-export type SearchResultMetadata = {
-  type?: number;
-  size?: number;
-  mtime?: number;
-  ctime?: number;
-};
-
-export type SearchResultItem =
-  | string
-  | {
-      path?: string;
-      metadata?: SearchResultMetadata;
-      size?: number;
-      mtime?: number;
-      ctime?: number;
-      icon?: string;
-    };
 
 type FileRowProps = {
   item: SearchResultItem;
@@ -56,7 +39,7 @@ export const FileRow = memo(function FileRow({
   }
 
   // Accept both plain string paths and rich result objects produced by the search backend.
-  const path = typeof item === 'string' ? item : item.path ?? '';
+  const path = typeof item === 'string' ? item : (item.path ?? '');
   let filename = '';
   let directoryPath = '';
 

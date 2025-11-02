@@ -2,12 +2,13 @@ import { useReducer, useRef, useCallback, useEffect } from 'react';
 import type { MutableRefObject } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { SEARCH_DEBOUNCE_MS } from '../constants';
-import type { SearchResultItem } from '../components/FileRow';
+import type { SlabIndex } from '../types/slab';
+import { toSlabIndexArray } from '../types/slab';
 
 type SearchError = string | Error | null;
 
 type SearchState = {
-  results: SearchResultItem[];
+  results: SlabIndex[];
   isInitialized: boolean;
   scannedFiles: number;
   processedEvents: number;
@@ -33,7 +34,7 @@ type SearchAction =
   | {
       type: 'SEARCH_SUCCESS';
       payload: {
-        results: SearchResultItem[];
+        results: SlabIndex[];
         query: string;
         duration: number;
         count: number;
@@ -120,10 +121,7 @@ function reducer(state: SearchState, action: SearchAction): SearchState {
   }
 }
 
-const searchParamsReducer = (
-  prev: SearchParams,
-  patch: Partial<SearchParams>,
-): SearchParams => {
+const searchParamsReducer = (prev: SearchParams, patch: Partial<SearchParams>): SearchParams => {
   const next = { ...prev, ...patch };
   return next;
 };
@@ -171,83 +169,82 @@ export function useFileSearch(): UseFileSearchResult {
     cancelTimer(loadingDelayTimerRef);
   }, []);
 
-  const handleSearch = useCallback(
-    async (overrides: Partial<SearchParams> = {}) => {
-      const nextSearch = { ...latestSearchRef.current, ...overrides };
-      latestSearchRef.current = nextSearch;
-      const requestVersion = searchVersionRef.current + 1;
-      searchVersionRef.current = requestVersion;
+  const handleSearch = useCallback(async (overrides: Partial<SearchParams> = {}) => {
+    const nextSearch = { ...latestSearchRef.current, ...overrides };
+    latestSearchRef.current = nextSearch;
+    const requestVersion = searchVersionRef.current + 1;
+    searchVersionRef.current = requestVersion;
 
-      const { query, useRegex, caseSensitive } = nextSearch;
-      const startTs = performance.now();
-      const isInitial = !hasInitialSearchRunRef.current;
-      const trimmedQuery = query.trim();
+    const { query, useRegex, caseSensitive } = nextSearch;
+    const startTs = performance.now();
+    const isInitial = !hasInitialSearchRunRef.current;
+    const trimmedQuery = query.trim();
 
-      dispatch({ type: 'SEARCH_REQUEST', payload: { immediate: isInitial } });
+    dispatch({ type: 'SEARCH_REQUEST', payload: { immediate: isInitial } });
 
-      if (!isInitial) {
-        cancelTimer(loadingDelayTimerRef);
-        loadingDelayTimerRef.current = setTimeout(() => {
-          dispatch({ type: 'SEARCH_LOADING_DELAY' });
-          loadingDelayTimerRef.current = null;
-        }, 150);
+    if (!isInitial) {
+      cancelTimer(loadingDelayTimerRef);
+      loadingDelayTimerRef.current = setTimeout(() => {
+        dispatch({ type: 'SEARCH_LOADING_DELAY' });
+        loadingDelayTimerRef.current = null;
+      }, 150);
+    }
+
+    try {
+      const rawResults = await invoke<number[]>('search', {
+        query,
+        options: {
+          useRegex,
+          caseInsensitive: !caseSensitive,
+        },
+      });
+
+      const searchResults = Array.isArray(rawResults) ? toSlabIndexArray(rawResults) : [];
+
+      if (searchVersionRef.current !== requestVersion) {
+        return;
       }
 
-      try {
-        const searchResults = await invoke<SearchResultItem[]>('search', {
-          query,
-          options: {
-            useRegex,
-            caseInsensitive: !caseSensitive,
-          },
-        });
+      cancelTimer(loadingDelayTimerRef);
 
-        if (searchVersionRef.current !== requestVersion) {
-          return;
-        }
+      const endTs = performance.now();
+      const duration = endTs - startTs;
 
-        cancelTimer(loadingDelayTimerRef);
+      dispatch({
+        type: 'SEARCH_SUCCESS',
+        payload: {
+          results: searchResults,
+          query: trimmedQuery,
+          duration,
+          count: searchResults.length,
+        },
+      });
+    } catch (error) {
+      console.error('Search failed:', error);
 
-        const endTs = performance.now();
-        const duration = endTs - startTs;
-
-        dispatch({
-          type: 'SEARCH_SUCCESS',
-          payload: {
-            results: Array.isArray(searchResults) ? searchResults : [],
-            query: trimmedQuery,
-            duration,
-            count: Array.isArray(searchResults) ? searchResults.length : 0,
-          },
-        });
-      } catch (error) {
-        console.error('Search failed:', error);
-
-        if (searchVersionRef.current !== requestVersion) {
-          return;
-        }
-
-        cancelTimer(loadingDelayTimerRef);
-
-        const endTs = performance.now();
-        const duration = endTs - startTs;
-
-        const normalisedError =
-          error instanceof Error ? error : error ? String(error) : 'An unknown error occurred.';
-
-        dispatch({
-          type: 'SEARCH_FAILURE',
-          payload: {
-            error: normalisedError,
-            duration,
-          },
-        });
-      } finally {
-        hasInitialSearchRunRef.current = true;
+      if (searchVersionRef.current !== requestVersion) {
+        return;
       }
-    },
-    [],
-  );
+
+      cancelTimer(loadingDelayTimerRef);
+
+      const endTs = performance.now();
+      const duration = endTs - startTs;
+
+      const normalisedError =
+        error instanceof Error ? error : error ? String(error) : 'An unknown error occurred.';
+
+      dispatch({
+        type: 'SEARCH_FAILURE',
+        payload: {
+          error: normalisedError,
+          duration,
+        },
+      });
+    } finally {
+      hasInitialSearchRunRef.current = true;
+    }
+  }, []);
 
   const queueSearch = useCallback(
     (query: string) => {

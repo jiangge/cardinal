@@ -4,9 +4,10 @@ import './App.css';
 import { ContextMenu } from './components/ContextMenu';
 import { ColumnHeader } from './components/ColumnHeader';
 import { FileRow } from './components/FileRow';
-import type { SearchResultItem } from './components/FileRow';
 import StatusBar from './components/StatusBar';
 import type { StatusTabKey } from './components/StatusBar';
+import type { SearchResultItem } from './types/search';
+import type { StatusBarUpdatePayload } from './types/ipc';
 import { useColumnResize } from './hooks/useColumnResize';
 import { useContextMenu } from './hooks/useContextMenu';
 import { useFileSearch } from './hooks/useFileSearch';
@@ -22,12 +23,6 @@ import { listen, once } from '@tauri-apps/api/event';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 
 type ActiveTab = StatusTabKey;
-
-type StatusUpdatePayload = {
-  scanned_files: number;
-  processed_events: number;
-};
-
 
 function App() {
   const {
@@ -94,7 +89,7 @@ function App() {
     let unlistenInit: UnlistenFn | undefined;
 
     const setupListeners = async (): Promise<void> => {
-      unlistenStatus = await listen<StatusUpdatePayload>('status_bar_update', (event) => {
+  unlistenStatus = await listen<StatusBarUpdatePayload>('status_bar_update', (event) => {
         if (!isMountedRef.current) return;
         const payload = event.payload;
         if (!payload) return;
@@ -194,7 +189,7 @@ function App() {
 
   const displayState = getDisplayState();
   const searchErrorMessage =
-    typeof searchError === 'string' ? searchError : searchError?.message ?? null;
+    typeof searchError === 'string' ? searchError : (searchError?.message ?? null);
 
   useEffect(() => {
     if (activeTab === 'events') {

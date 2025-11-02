@@ -13,6 +13,7 @@ import 'react-virtualized/styles.css';
 import { ROW_HEIGHT } from '../constants';
 import { MiddleEllipsisHighlight } from './MiddleEllipsisHighlight';
 import { formatTimestamp } from '../utils/format';
+import type { RecentEventPayload } from '../types/ipc';
 
 const COLUMNS = [
   { key: 'time', label: 'Time' },
@@ -25,11 +26,7 @@ type EventColumnKey = (typeof COLUMNS)[number]['key'];
 // Distance (px) from the bottom that still counts as "user is at the end".
 const BOTTOM_THRESHOLD = 50;
 
-export type FileSystemEvent = {
-  path?: string;
-  timestamp?: number;
-  [key: string]: unknown;
-};
+export type FileSystemEvent = RecentEventPayload;
 
 type EventRowProps = {
   item: FileSystemEvent | undefined;
@@ -120,7 +117,10 @@ export type FSEventsPanelHandle = {
 };
 
 const FSEventsPanel = forwardRef<FSEventsPanelHandle, FSEventsPanelProps>(
-  ({ events, onResizeStart, onContextMenu, onHeaderContextMenu, searchQuery, caseInsensitive }, ref) => {
+  (
+    { events, onResizeStart, onContextMenu, onHeaderContextMenu, searchQuery, caseInsensitive },
+    ref,
+  ) => {
     const headerRef = useRef<HTMLDivElement | null>(null);
     const listRef = useRef<VirtualizedList | null>(null);
     const isAtBottomRef = useRef(true); // Track whether the viewport is watching the newest events.
@@ -143,7 +143,15 @@ const FSEventsPanel = forwardRef<FSEventsPanelHandle, FSEventsPanelProps>(
 
     // Track viewport proximity to the bottom so streams only auto-scroll when the user expects it.
     const handleScroll = useCallback(
-      ({ scrollTop, scrollHeight, clientHeight }: { scrollTop: number; scrollHeight: number; clientHeight: number }) => {
+      ({
+        scrollTop,
+        scrollHeight,
+        clientHeight,
+      }: {
+        scrollTop: number;
+        scrollHeight: number;
+        clientHeight: number;
+      }) => {
         const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
         isAtBottomRef.current = distanceFromBottom <= BOTTOM_THRESHOLD;
       },

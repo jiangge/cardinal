@@ -2,14 +2,12 @@ import { useCallback, useRef, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { UnlistenFn } from '@tauri-apps/api/event';
-import type { SearchResultItem } from '../components/FileRow';
+import type { NodeInfoResponse, SearchResultItem } from '../types/search';
+import type { SlabIndex } from '../types/slab';
+import { toSlabIndex } from '../types/slab';
+import type { IconUpdatePayload, IconUpdateWirePayload } from '../types/ipc';
 
-type IconUpdate = {
-  slabIndex: unknown;
-  icon?: string;
-};
-
-type IconUpdateEventPayload = IconUpdate[] | undefined;
+type IconUpdateEventPayload = readonly IconUpdateWirePayload[] | null | undefined;
 
 export type DataLoaderCache = Map<number, SearchResultItem>;
 
@@ -29,17 +27,23 @@ const mergeIcon = (
   return { icon } as SearchResultItem;
 };
 
-export function useDataLoader(results: SearchResultItem[] | null | undefined) {
+const fromNodeInfo = (node: NodeInfoResponse): SearchResultItem => ({
+  path: node.path,
+  metadata: node.metadata,
+  icon: node.icon ?? undefined,
+});
+
+export function useDataLoader(results: SlabIndex[]) {
   const loadingRef = useRef<Set<number>>(new Set());
   const versionRef = useRef(0);
   const cacheRef = useRef<DataLoaderCache>(new Map());
-  const indexMapRef = useRef<Map<unknown, number>>(new Map());
+  const indexMapRef = useRef<Map<SlabIndex, number>>(new Map());
   const [cache, setCache] = useState<DataLoaderCache>(() => {
     const initial = new Map<number, SearchResultItem>();
     cacheRef.current = initial;
     return initial;
   });
-  const resultsRef = useRef<SearchResultItem[]>([]);
+  const resultsRef = useRef<SlabIndex[]>([]);
 
   // Reset loading state whenever the result source changes.
   useEffect(() => {
@@ -47,8 +51,8 @@ export function useDataLoader(results: SearchResultItem[] | null | undefined) {
     loadingRef.current.clear();
     const nextCache = new Map<number, SearchResultItem>();
     cacheRef.current = nextCache;
-    resultsRef.current = Array.isArray(results) ? results : [];
-    const indexMap = new Map<unknown, number>();
+    resultsRef.current = results;
+    const indexMap = new Map<SlabIndex, number>();
     resultsRef.current.forEach((value, index) => {
       if (value != null) {
         indexMap.set(value, index);
@@ -68,6 +72,20 @@ export function useDataLoader(results: SearchResultItem[] | null | undefined) {
             return;
           }
 
+          const normalized: IconUpdatePayload[] = [];
+          updates.forEach((update) => {
+            if (update && typeof update.slabIndex === 'number') {
+              normalized.push({
+                slabIndex: toSlabIndex(update.slabIndex),
+                icon: update.icon,
+              });
+            }
+          });
+
+          if (normalized.length === 0) {
+            return;
+          }
+
           setCache((prev) => {
             // Collect items that truly changed before creating a fresh Map.
             const changes: Array<{
@@ -75,7 +93,7 @@ export function useDataLoader(results: SearchResultItem[] | null | undefined) {
               current: SearchResultItem | undefined;
               newIcon?: string;
             }> = [];
-            updates.forEach((update) => {
+            normalized.forEach((update) => {
               const index = indexMapRef.current.get(update.slabIndex);
               if (index === undefined) return;
               const current = prev.get(index);
@@ -105,50 +123,48 @@ export function useDataLoader(results: SearchResultItem[] | null | undefined) {
     };
   }, []);
 
-  const ensureRangeLoaded = useCallback(
-    async (start: number, end: number) => {
-      const list = resultsRef.current;
-      const total = list.length;
-      if (start < 0 || end < start || total === 0) return;
-      const needLoading: number[] = [];
-      for (let i = start; i <= end && i < total; i++) {
-        if (!cacheRef.current.has(i) && !loadingRef.current.has(i) && list[i] != null) {
-          needLoading.push(i);
-          loadingRef.current.add(i);
-        }
+  const ensureRangeLoaded = useCallback(async (start: number, end: number) => {
+    const list = resultsRef.current;
+    const total = list.length;
+    if (start < 0 || end < start || total === 0) return;
+    const needLoading: number[] = [];
+    for (let i = start; i <= end && i < total; i++) {
+      if (!cacheRef.current.has(i) && !loadingRef.current.has(i) && list[i] != null) {
+        needLoading.push(i);
+        loadingRef.current.add(i);
       }
-      if (needLoading.length === 0) return;
-      const versionAtRequest = versionRef.current;
-      try {
-        const slice = needLoading.map((i) => list[i]);
-        const fetched = await invoke<SearchResultItem[]>('get_nodes_info', { results: slice });
-        if (versionRef.current !== versionAtRequest) {
-          needLoading.forEach((i) => loadingRef.current.delete(i));
-          return;
-        }
-        setCache((prev) => {
-          if (versionRef.current !== versionAtRequest) return prev;
-          const newCache = new Map(prev);
+    }
+    if (needLoading.length === 0) return;
+    const versionAtRequest = versionRef.current;
+    try {
+      const slice = needLoading.map((i) => list[i]);
+        const fetched = await invoke<NodeInfoResponse[]>('get_nodes_info', { results: slice });
+      if (versionRef.current !== versionAtRequest) {
+        needLoading.forEach((i) => loadingRef.current.delete(i));
+        return;
+      }
+      setCache((prev) => {
+        if (versionRef.current !== versionAtRequest) return prev;
+        const newCache = new Map(prev);
           needLoading.forEach((originalIndex, idx) => {
             const fetchedItem = fetched[idx];
             if (fetchedItem !== undefined) {
+              const normalized = fromNodeInfo(fetchedItem);
               const existing = newCache.get(originalIndex);
-              const preferredIcon = getIcon(existing) ?? getIcon(fetchedItem);
-              const merged = mergeIcon(fetchedItem, preferredIcon);
+              const preferredIcon = getIcon(existing) ?? getIcon(normalized);
+              const merged = mergeIcon(normalized, preferredIcon);
               newCache.set(originalIndex, merged);
             }
-            loadingRef.current.delete(originalIndex);
-          });
-          cacheRef.current = newCache;
-          return newCache;
+          loadingRef.current.delete(originalIndex);
         });
-      } catch (err) {
-        needLoading.forEach((i) => loadingRef.current.delete(i));
-        console.error('Failed loading rows', err);
-      }
-    },
-    [results],
-  );
+        cacheRef.current = newCache;
+        return newCache;
+      });
+    } catch (err) {
+      needLoading.forEach((i) => loadingRef.current.delete(i));
+      console.error('Failed loading rows', err);
+    }
+  }, []);
 
   return { cache, ensureRangeLoaded };
 }
