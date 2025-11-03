@@ -30,17 +30,15 @@ base64 = "0.22"
 rayon = "1.10"
 parking_lot = "0.12"
 tauri-plugin-prevent-default = "3"
+directories = "6.0.0"
+tauri-plugin-macos-permissions = "2.3.0"
 
 cardinal-sdk.path = "../../cardinal-sdk"
 search-cache.path = "../../search-cache"
 fswalk.path = "../../fswalk"
 fs-icon.path = "../../fs-icon"
-directories = "6.0.0"
 
 [features]
 default = []
 # https://v2.tauri.app/develop/debug/#enable-devtools-feature
 dev = ["tauri/devtools"]
-
-# [profile.release]
-# strip = true

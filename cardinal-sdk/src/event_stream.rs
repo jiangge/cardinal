@@ -128,7 +128,6 @@ impl Drop for EventStreamWithQueue {
         unsafe {
             FSEventStreamStop(self.stream);
             FSEventStreamInvalidate(self.stream);
-            FSEventStreamRelease(self.stream);
         }
     }
 }
@@ -167,18 +166,18 @@ impl EventWatcher {
     ) -> (dev_t, EventWatcher) {
         let (_cancellation_token, cancellation_token_rx) = bounded::<()>(1);
         let (sender, receiver) = unbounded();
-        let stream = EventStream::new(
-            &[&path],
-            since_event_id,
-            latency,
-            Box::new(move |events| {
-                let _ = sender.send(events);
-            }),
-        );
-        let dev = stream.dev();
+        let dev = 0;
         std::thread::Builder::new()
             .name("cardinal-sdk-event-watcher".to_string())
             .spawn(move || {
+                let stream = EventStream::new(
+                    &[&path],
+                    since_event_id,
+                    latency,
+                    Box::new(move |events| {
+                        let _ = sender.send(events);
+                    }),
+                );
                 let _stream_and_queue = stream.spawn().expect("failed to spawn event stream");
                 let _ = cancellation_token_rx.recv();
             })
@@ -190,5 +189,65 @@ impl EventWatcher {
                 _cancellation_token,
             },
         )
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+    use crate::utils::current_event_id;
+    use crossbeam_channel::RecvTimeoutError;
+    use std::time::{Duration, Instant};
+    use tempfile::tempdir;
+
+    #[test]
+    fn drop_then_respawn_event_watcher_delivers_events() {
+        let temp_dir = tempdir().expect("failed to create tempdir");
+        let watched_root = temp_dir.path().to_path_buf();
+        // canonicalize /var -> /private/var
+        let watched_root = watched_root.canonicalize().expect("failed to canonicalize");
+        let watch_path = watched_root
+            .to_str()
+            .expect("tempdir path should be utf8")
+            .to_string();
+
+        let (_, initial_watcher) =
+            EventWatcher::spawn(watch_path.clone(), current_event_id(), 0.05);
+        drop(initial_watcher);
+
+        // Give the background thread a moment to observe the drop.
+        std::thread::sleep(Duration::from_millis(500));
+
+        let (_, respawned_watcher) = EventWatcher::spawn(watch_path, current_event_id(), 0.05);
+
+        // Allow the stream to start before triggering filesystem activity.
+        std::thread::sleep(Duration::from_millis(500));
+
+        let created_file = watched_root.join("respawn_event.txt");
+        std::fs::write(&created_file, "cardinal").expect("failed to write test file");
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut observed_change = false;
+        while Instant::now() < deadline {
+            match respawned_watcher.recv_timeout(Duration::from_millis(200)) {
+                Ok(batch) => {
+                    if batch
+                        .iter()
+                        .any(|event| event.path.starts_with(&created_file))
+                    {
+                        observed_change = true;
+                        break;
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => break,
+            }
+        }
+
+        drop(respawned_watcher);
+        assert!(
+            observed_change,
+            "respawned watcher failed to deliver file change event"
+        );
     }
 }
