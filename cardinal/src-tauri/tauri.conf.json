@@ -24,6 +24,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "category": "Utilities",
     "macOS": {
       "signingIdentity": "-",
       "minimumSystemVersion": "13.0"
