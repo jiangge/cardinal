@@ -558,10 +558,6 @@ pub fn run() -> Result<()> {
         .expect("error while running tauri application");
 
     let app_handle = &app.handle().to_owned();
-    if !has_full_disk_access(&app_handle) {
-        info!("App does not have Full Disk Access, sleeping indefinitely");
-        std::thread::sleep(Duration::from_secs(u64::MAX));
-    }
     emit_app_state(app_handle);
     let icon_update_rx = &icon_update_rx;
     std::thread::scope(move |s| {
@@ -579,6 +575,10 @@ pub fn run() -> Result<()> {
         });
         // Init background event processing thread
         s.spawn(move || {
+            if !has_full_disk_access(&app_handle) {
+                info!("App does not have Full Disk Access, sleeping indefinitely");
+                std::thread::sleep(Duration::from_secs(u64::MAX));
+            }
             const WATCH_ROOT: &str = "/";
             const FSE_LATENCY_SECS: f64 = 0.1;
             let path = PathBuf::from(WATCH_ROOT);
