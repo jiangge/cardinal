@@ -81,9 +81,7 @@ function App() {
     getMenuItems: getEventsMenuItems,
   } = useContextMenu(autoFitEventColumns);
 
-  const [fullDiskAccessStatus, setFullDiskAccessStatus] = useState<'granted' | 'denied'>(
-    'granted',
-  );
+  const [fullDiskAccessStatus, setFullDiskAccessStatus] = useState<'granted' | 'denied'>('granted');
   const [isCheckingFullDiskAccess, setIsCheckingFullDiskAccess] = useState(true);
   const hasLoggedPermissionStatusRef = useRef(false);
   const menu = activeTab === 'events' ? eventsMenu : filesMenu;

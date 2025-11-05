@@ -150,7 +150,8 @@ const FSEventsPanel = forwardRef<FSEventsPanelHandle, FSEventsPanelProps>(
         headerRef.current.scrollLeft = container.scrollLeft;
       }
 
-      const distanceFromBottom = container.scrollHeight - (container.scrollTop + container.clientHeight);
+      const distanceFromBottom =
+        container.scrollHeight - (container.scrollTop + container.clientHeight);
       isAtBottomRef.current = distanceFromBottom <= BOTTOM_THRESHOLD;
     }, []);
 
@@ -227,7 +228,9 @@ const FSEventsPanel = forwardRef<FSEventsPanelHandle, FSEventsPanelProps>(
 
       const observer = new ResizeObserver(([entry]) => {
         const { width, height } = entry.contentRect;
-        setListSize((prev) => (prev.width === width && prev.height === height ? prev : { width, height }));
+        setListSize((prev) =>
+          prev.width === width && prev.height === height ? prev : { width, height },
+        );
       });
 
       observer.observe(node);

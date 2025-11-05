@@ -20,11 +20,12 @@ const TABS: Array<{ key: StatusTabKey; label: string }> = [
   { key: 'events', label: 'Events' },
 ];
 
-const LIFECYCLE_DISPLAY: Record<AppLifecycleStatus, { icon: string; label: string; tone: string }> = {
-  Initializing: { icon: '○', label: 'Initializing', tone: 'initializing' },
-  Ready: { icon: '●', label: 'Ready', tone: 'ready' },
-  Closing: { icon: '●', label: 'Closing', tone: 'closing' },
-};
+const LIFECYCLE_DISPLAY: Record<AppLifecycleStatus, { icon: string; label: string; tone: string }> =
+  {
+    Initializing: { icon: '○', label: 'Initializing', tone: 'initializing' },
+    Ready: { icon: '●', label: 'Ready', tone: 'ready' },
+    Closing: { icon: '●', label: 'Closing', tone: 'closing' },
+  };
 
 const StatusBar = ({
   scannedFiles,

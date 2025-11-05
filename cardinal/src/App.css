@@ -795,7 +795,10 @@ button:active {
   font-weight: 600;
   letter-spacing: 0.01em;
   cursor: pointer;
-  transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -917,11 +920,10 @@ button:active {
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
   }
 
-
-.status-rescan-icon {
-  font-size: 12px;
-  line-height: 1;
-}
+  .status-rescan-icon {
+    font-size: 12px;
+    line-height: 1;
+  }
   .status-tab {
     color: rgba(226, 232, 240, 0.72);
   }
