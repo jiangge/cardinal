@@ -577,7 +577,10 @@ pub fn run() -> Result<()> {
         s.spawn(move || {
             if !has_full_disk_access(&app_handle) {
                 info!("App does not have Full Disk Access, sleeping indefinitely");
-                std::thread::sleep(Duration::from_secs(u64::MAX));
+                while !APP_QUIT.load(Ordering::Relaxed) {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                return;
             }
             const WATCH_ROOT: &str = "/";
             const FSE_LATENCY_SECS: f64 = 0.1;
