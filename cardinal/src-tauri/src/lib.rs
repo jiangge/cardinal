@@ -37,14 +37,12 @@ static APP_QUIT: AtomicBool = AtomicBool::new(false);
 enum AppLifecycleState {
     Initializing = 0,
     Ready = 1,
-    Closing = 2,
 }
 
 impl AppLifecycleState {
     fn from_u8(value: u8) -> Self {
         match value {
             1 => Self::Ready,
-            2 => Self::Closing,
             _ => Self::Initializing,
         }
     }
@@ -53,7 +51,6 @@ impl AppLifecycleState {
         match self {
             Self::Initializing => "Initializing",
             Self::Ready => "Ready",
-            Self::Closing => "Closing",
         }
     }
 }
@@ -580,6 +577,7 @@ pub fn run() -> Result<()> {
                 while !APP_QUIT.load(Ordering::Relaxed) {
                     std::thread::sleep(Duration::from_millis(100));
                 }
+                info!("Background thread quitting without Full Disk Access");
                 return;
             }
             const WATCH_ROOT: &str = "/";
@@ -707,7 +705,6 @@ pub fn run() -> Result<()> {
         app.run(move |app_handle, event| {
             match &event {
                 RunEvent::Exit => {
-                    update_app_state(app_handle, AppLifecycleState::Closing);
                     APP_QUIT.store(true, Ordering::Relaxed);
                     // Triggered when the tray context menu requests an exit.
                     // TODO(ldm0): Periodically save the cache so a close event within ~10s can skip another flush.
@@ -722,7 +719,6 @@ pub fn run() -> Result<()> {
                     // This allow us to catch tray icon events when there is no window
                     // if we manually requested an exit (code is Some(_)) we will let it go through
                     if code.is_none() {
-                        update_app_state(app_handle, AppLifecycleState::Closing);
                         APP_QUIT.store(true, Ordering::Relaxed);
                         info!("Tauri application exited, flushing cache...");
 
@@ -746,6 +742,10 @@ pub fn run() -> Result<()> {
 /// Write cache to file before app exit
 fn flush_cache_to_file_once(finish_tx: &Sender<Sender<Option<SearchCache>>>) {
     static FLUSH_ONCE: Once = Once::new();
+    if load_app_state() == AppLifecycleState::Initializing {
+        info!("App not fully initialized, skipping cache flush");
+        return;
+    }
     FLUSH_ONCE.call_once(move || {
         let (cache_tx, cache_rx) = bounded::<Option<SearchCache>>(1);
         finish_tx
