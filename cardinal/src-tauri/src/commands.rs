@@ -187,7 +187,7 @@ pub fn open_in_finder(path: String) -> Result<(), String> {
         .arg(&path)
         .spawn()
         .map_err(|e| format!("Failed to reveal path in Finder: {e}"))?;
-    return Ok(());
+    Ok(())
 }
 
 #[tauri::command]
