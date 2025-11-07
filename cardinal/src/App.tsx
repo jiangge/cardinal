@@ -135,8 +135,8 @@ function App() {
         if (!isMountedRef.current) return;
         const payload = event.payload;
         if (!payload) return;
-        const { scanned_files, processed_events } = payload;
-        handleStatusUpdate(scanned_files, processed_events);
+        const { scannedFiles, processedEvents } = payload;
+        handleStatusUpdate(scannedFiles, processedEvents);
       });
 
       unlistenLifecycle = await listen<AppLifecycleStatus>('app_lifecycle_state', (event) => {

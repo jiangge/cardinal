@@ -1,8 +1,8 @@
 import type { SlabIndex } from './slab';
 
 export type StatusBarUpdatePayload = {
-  scanned_files: number;
-  processed_events: number;
+  scannedFiles: number;
+  processedEvents: number;
 };
 
 export type IconUpdateWirePayload = {
