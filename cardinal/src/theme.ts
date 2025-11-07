@@ -67,4 +67,3 @@ export const persistThemePreference = (preference: ThemePreference): void => {
 export const applyThemePreference = (preference: ThemePreference): void => {
   applyPreferenceToDocument(preference);
 };
-
