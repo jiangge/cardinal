@@ -1,4 +1,7 @@
-use crate::lifecycle::{EXIT_REQUESTED, load_app_state};
+use crate::{
+    LOGIC_START,
+    lifecycle::{EXIT_REQUESTED, load_app_state},
+};
 use anyhow::Result;
 use base64::{Engine as _, engine::general_purpose};
 use crossbeam_channel::{Receiver, Sender};
@@ -205,4 +208,11 @@ pub fn request_app_exit(app_handle: AppHandle) -> Result<(), String> {
     EXIT_REQUESTED.store(true, Ordering::Relaxed);
     app_handle.exit(0);
     Ok(())
+}
+
+#[tauri::command]
+pub fn start_logic() {
+    if let Some(sender) = LOGIC_START.get() {
+        let _ = sender.send(());
+    }
 }

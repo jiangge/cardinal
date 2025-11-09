@@ -11,12 +11,14 @@ use cardinal_sdk::EventWatcher;
 use commands::{
     SearchJob, SearchState, get_app_status, get_nodes_info, open_in_finder, preview_with_quicklook,
     request_app_exit, search, trigger_rescan, update_icon_viewport,
+    start_logic,
 };
-use crossbeam_channel::{Sender, bounded, unbounded};
+use crossbeam_channel::{Receiver, Sender, bounded, unbounded, RecvTimeoutError};
 use lifecycle::{
     APP_QUIT, AppLifecycleState, EXIT_REQUESTED, emit_app_state, load_app_state, update_app_state,
 };
 use search_cache::{SearchCache, SearchResultNode, SlabIndex, WalkData};
+use once_cell::sync::OnceCell;
 use std::{
     path::PathBuf,
     sync::{
@@ -25,7 +27,7 @@ use std::{
     },
     time::Duration,
 };
-use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime, WindowEvent};
+use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_global_shortcut::ShortcutState;
 use tracing::{info, level_filters::LevelFilter, warn};
 use tracing_subscriber::EnvFilter;
@@ -41,6 +43,7 @@ static CACHE_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
         .join("cardinal.db")
 });
 const QUICK_LAUNCH_SHORTCUT: &str = "CmdOrCtrl+Shift+Space";
+pub(crate) static LOGIC_START: OnceCell<Sender<()>> = OnceCell::new();
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() -> Result<()> {
@@ -59,6 +62,10 @@ pub fn run() -> Result<()> {
     let (icon_viewport_tx, icon_viewport_rx) = unbounded::<(u64, Vec<SlabIndex>)>();
     let (rescan_tx, rescan_rx) = unbounded::<()>();
     let (icon_update_tx, icon_update_rx) = unbounded::<IconPayload>();
+    let (logic_start_tx, logic_start_rx) = bounded(1);
+    LOGIC_START
+        .set(logic_start_tx)
+        .expect("LOGIC_START channel already initialized");
 
     let quick_launch_shortcut_plugin = tauri_plugin_global_shortcut::Builder::new()
         .with_shortcut(QUICK_LAUNCH_SHORTCUT)
@@ -129,7 +136,8 @@ pub fn run() -> Result<()> {
             trigger_rescan,
             open_in_finder,
             preview_with_quicklook,
-            request_app_exit
+            request_app_exit,
+            start_logic
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -149,12 +157,9 @@ pub fn run() -> Result<()> {
             info!("icon update thread exited");
         });
 
+        let logic_start_rx = logic_start_rx;
         s.spawn(move || {
-            if !has_full_disk_access(app_handle) {
-                info!("App does not have Full Disk Access, sleeping indefinitely");
-                while !APP_QUIT.load(Ordering::Relaxed) {
-                    std::thread::sleep(Duration::from_millis(100));
-                }
+            if !wait_for_logic_start(logic_start_rx) {
                 info!("Background thread quitting without Full Disk Access");
                 return;
             }
@@ -317,16 +322,23 @@ fn flush_cache_to_file_once(finish_tx: &Sender<Sender<Option<SearchCache>>>) {
     });
 }
 
-fn has_full_disk_access<R: Runtime>(app_handle: &AppHandle<R>) -> bool {
-    let check_dirs = ["Library/Containers/com.apple.stocks", "Library/Safari"];
+fn wait_for_logic_start(rx: Receiver<()>) -> bool {
+    info!("Waiting for Full Disk Access signal from the frontend");
+    loop {
+        if APP_QUIT.load(Ordering::Relaxed) {
+            return false;
+        }
 
-    if let Ok(home_dir) = app_handle.path().home_dir() {
-        for check_dir in check_dirs.iter() {
-            if std::fs::read_dir(home_dir.join(check_dir)).is_ok() {
+        match rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(()) => {
+                info!("Received Full Disk Access grant, starting background processing");
                 return true;
+            }
+            Err(RecvTimeoutError::Timeout) => continue,
+            Err(RecvTimeoutError::Disconnected) => {
+                warn!("Full Disk Access channel disconnected before grant");
+                return false;
             }
         }
     }
-
-    false
 }

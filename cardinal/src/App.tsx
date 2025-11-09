@@ -126,6 +126,17 @@ function App() {
     void checkFullDiskAccess();
   }, []);
 
+  useEffect(() => {
+    if (isCheckingFullDiskAccess) {
+      return;
+    }
+    if (fullDiskAccessStatus !== 'granted') {
+      return;
+    }
+
+    void invoke('start_logic');
+  }, [fullDiskAccessStatus, isCheckingFullDiskAccess]);
+
   const focusSearchInput = useCallback(() => {
     requestAnimationFrame(() => {
       const input = searchInputRef.current;
