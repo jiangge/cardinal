@@ -18,7 +18,9 @@ import type { SlabIndex } from '../types/slab';
 
 export type VirtualListHandle = {
   scrollToTop: () => void;
+  scrollToRow: (rowIndex: number, align?: 'nearest' | 'start' | 'end' | 'center') => void;
   ensureRangeLoaded: (startIndex: number, endIndex: number) => Promise<void> | void;
+  getItem: (index: number) => SearchResultItem | undefined;
 };
 
 type VirtualListProps = {
@@ -167,13 +169,58 @@ export const VirtualList = forwardRef<VirtualListHandle, VirtualListProps>(funct
 
   // ----- imperative API -----
   // Imperative handle used by App.jsx to drive preloading and programmatic scroll
+  const scrollToRow = useCallback(
+    (rowIndex: number, align: 'nearest' | 'start' | 'end' | 'center' = 'nearest') => {
+      if (!Number.isFinite(rowIndex) || rowCount === 0) {
+        return;
+      }
+
+      const targetIndex = Math.max(0, Math.min(rowIndex, rowCount - 1));
+      const rowTop = targetIndex * rowHeight;
+      const rowBottom = rowTop + rowHeight;
+
+      updateScrollAndRange((prev) => {
+        if (viewportHeight <= 0) {
+          return rowTop;
+        }
+
+        const viewportTop = prev;
+        const viewportBottom = viewportTop + viewportHeight;
+
+        switch (align) {
+          case 'start':
+            return rowTop;
+          case 'end':
+            return rowBottom - viewportHeight;
+          case 'center':
+            return rowTop - Math.max(0, (viewportHeight - rowHeight) / 2);
+          case 'nearest':
+          default: {
+            if (rowTop < viewportTop) {
+              return rowTop;
+            }
+            if (rowBottom > viewportBottom) {
+              return rowBottom - viewportHeight;
+            }
+            return prev;
+          }
+        }
+      });
+    },
+    [rowCount, rowHeight, viewportHeight, updateScrollAndRange],
+  );
+
+  const getItemAt = useCallback((index: number) => cache.get(index), [cache]);
+
   useImperativeHandle(
     ref,
     () => ({
       scrollToTop: () => updateScrollAndRange(() => 0),
+      scrollToRow,
       ensureRangeLoaded,
+      getItem: getItemAt,
     }),
-    [updateScrollAndRange, ensureRangeLoaded],
+    [updateScrollAndRange, scrollToRow, ensureRangeLoaded, getItemAt],
   );
 
   // ----- rendered items memo -----

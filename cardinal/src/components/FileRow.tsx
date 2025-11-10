@@ -10,8 +10,8 @@ type FileRowProps = {
   item?: SearchResultItem;
   rowIndex: number;
   style?: CSSProperties;
-  onContextMenu?: (event: ReactMouseEvent<HTMLDivElement>, path: string) => void;
-  onSelect?: (path: string) => void;
+  onContextMenu?: (event: ReactMouseEvent<HTMLDivElement>, path: string, rowIndex: number) => void;
+  onSelect?: (path: string, rowIndex: number) => void;
   isSelected?: boolean;
   searchQuery?: string;
   caseInsensitive?: boolean;
@@ -68,13 +68,13 @@ export const FileRow = memo(function FileRow({
   const handleContextMenu = (e: ReactMouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     if (path && onContextMenu) {
-      onContextMenu(e, path);
+      onContextMenu(e, path, rowIndex);
     }
   };
 
   const handleClick = () => {
     if (path && onSelect) {
-      onSelect(path);
+      onSelect(path, rowIndex);
     }
   };
 

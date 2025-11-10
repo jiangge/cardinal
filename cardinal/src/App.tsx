@@ -27,6 +27,7 @@ import {
   requestFullDiskAccessPermission,
 } from 'tauri-plugin-macos-permissions-api';
 import { useTranslation } from 'react-i18next';
+import type { SlabIndex } from './types/slab';
 
 type ActiveTab = StatusTabKey;
 
@@ -55,7 +56,12 @@ function App() {
     lifecycleState,
   } = state;
   const [activeTab, setActiveTab] = useState<ActiveTab>('files');
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  type SelectedRow = {
+    index: number;
+    slab: SlabIndex | null;
+    path: string | null;
+  };
+  const [selectedRow, setSelectedRow] = useState<SelectedRow | null>(null);
   const [isWindowFocused, setIsWindowFocused] = useState<boolean>(() => {
     if (typeof document === 'undefined') {
       return true;
@@ -75,9 +81,37 @@ function App() {
     useRegex,
   });
   const { t } = useTranslation();
-  const handleRowSelect = useCallback((path: string) => {
-    setSelectedPath(path);
-  }, []);
+
+  const selectRow = useCallback(
+    (rowIndex: number, pathOverride?: string | null) => {
+      if (rowIndex < 0 || rowIndex >= results.length) {
+        return;
+      }
+
+      const resolvedPath =
+        pathOverride ?? virtualListRef.current?.getItem?.(rowIndex)?.path ?? null;
+      const nextSlab = results[rowIndex] ?? null;
+
+      setSelectedRow((prev) => {
+        if (prev && prev.index === rowIndex && prev.slab === nextSlab && prev.path === resolvedPath) {
+          return prev;
+        }
+        return {
+          index: rowIndex,
+          slab: nextSlab,
+          path: resolvedPath,
+        };
+      });
+    },
+    [results],
+  );
+
+  const handleRowSelect = useCallback(
+    (path: string, rowIndex: number) => {
+      selectRow(rowIndex, path);
+    },
+    [selectRow],
+  );
 
   const {
     menu: filesMenu,
@@ -104,6 +138,8 @@ function App() {
     activeTab === 'events' ? showEventsHeaderContextMenu : showFilesHeaderContextMenu;
   const closeMenu = activeTab === 'events' ? closeEventsMenu : closeFilesMenu;
   const getMenuItems = activeTab === 'events' ? getEventsMenuItems : getFilesMenuItems;
+  const selectedIndex = selectedRow?.index ?? null;
+  const selectedPath = selectedRow?.path ?? null;
 
   useEffect(() => {
     const checkFullDiskAccess = async () => {
@@ -211,7 +247,7 @@ function App() {
 
   useEffect(() => {
     if (activeTab !== 'files') {
-      setSelectedPath(null);
+      setSelectedRow(null);
     }
   }, [activeTab]);
 
@@ -247,6 +283,50 @@ function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeTab, selectedPath]);
+
+  useEffect(() => {
+    if (activeTab !== 'files') {
+      return;
+    }
+
+    const handleArrowNavigation = (event: KeyboardEvent) => {
+      if (event.altKey || event.metaKey || event.ctrlKey) {
+        return;
+      }
+
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        const tagName = target.tagName;
+        if (tagName === 'INPUT' || tagName === 'TEXTAREA' || target.isContentEditable) {
+          return;
+        }
+      }
+
+      if (!results.length) {
+        return;
+      }
+
+      event.preventDefault();
+
+      const delta = event.key === 'ArrowDown' ? 1 : -1;
+      const fallbackIndex = delta > 0 ? -1 : results.length;
+      const baseIndex = selectedIndex ?? fallbackIndex;
+      const nextIndex = Math.min(Math.max(baseIndex + delta, 0), results.length - 1);
+
+      if (nextIndex === selectedIndex) {
+        return;
+      }
+
+      selectRow(nextIndex);
+    };
+
+    window.addEventListener('keydown', handleArrowNavigation);
+    return () => window.removeEventListener('keydown', handleArrowNavigation);
+  }, [activeTab, results, selectRow, selectedIndex]);
 
   useEffect(() => {
     const handleGlobalShortcuts = (event: KeyboardEvent) => {
@@ -289,6 +369,87 @@ function App() {
     window.addEventListener('keydown', handleGlobalShortcuts);
     return () => window.removeEventListener('keydown', handleGlobalShortcuts);
   }, [focusSearchInput, activeTab, selectedPath]);
+
+  useEffect(() => {
+    if (selectedIndex == null) {
+      return;
+    }
+
+    const list = virtualListRef.current;
+    if (!list) {
+      return;
+    }
+
+    list.scrollToRow?.(selectedIndex, 'nearest');
+
+    let cancelled = false;
+    const ensureResult = list.ensureRangeLoaded?.(selectedIndex, selectedIndex);
+    const ensurePromise = ensureResult instanceof Promise ? ensureResult : Promise.resolve();
+
+    void ensurePromise.then(() => {
+      if (cancelled) {
+        return;
+      }
+
+      const item = list.getItem?.(selectedIndex);
+      if (!item?.path) {
+        return;
+      }
+
+      setSelectedRow((prev) => {
+        if (!prev || prev.index !== selectedIndex || prev.path === item.path) {
+          return prev;
+        }
+        return { ...prev, path: item.path };
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedIndex]);
+
+  useEffect(() => {
+    if (!results.length) {
+      setSelectedRow(null);
+      return;
+    }
+
+    setSelectedRow((prev) => {
+      if (!prev) {
+        return prev;
+      }
+
+      const { slab, index, path } = prev;
+      let nextIndex = -1;
+
+      if (slab != null) {
+        nextIndex = results.findIndex((candidate) => candidate === slab);
+      }
+
+      if (nextIndex === -1) {
+        nextIndex = Math.min(index, results.length - 1);
+      }
+
+      if (nextIndex < 0) {
+        return null;
+      }
+
+      const nextSlab = results[nextIndex] ?? null;
+      if (nextIndex === index && nextSlab === slab) {
+        return prev;
+      }
+
+      const list = virtualListRef.current;
+      const resolvedPath = list?.getItem?.(nextIndex)?.path ?? null;
+
+      return {
+        index: nextIndex,
+        slab: nextSlab,
+        path: resolvedPath ?? (nextIndex === index ? path : null),
+      };
+    });
+  }, [results]);
 
   const onQueryChange = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
@@ -342,8 +503,8 @@ function App() {
   }, []);
 
   const handleRowContextMenu = useCallback(
-    (event: ReactMouseEvent<HTMLDivElement>, path: string) => {
-      handleRowSelect(path);
+    (event: ReactMouseEvent<HTMLDivElement>, path: string, rowIndex: number) => {
+      handleRowSelect(path, rowIndex);
       showContextMenu(event, path);
     },
     [handleRowSelect, showContextMenu],
@@ -356,14 +517,14 @@ function App() {
         item={item}
         rowIndex={rowIndex}
         style={{ ...rowStyle, width: 'var(--columns-total)' }} // Enforce column width CSS vars for virtualization rows
-        onContextMenu={handleRowContextMenu}
-        onSelect={handleRowSelect}
-        isSelected={item ? selectedPath === item.path : false}
+        onContextMenu={(event, path) => handleRowContextMenu(event, path, rowIndex)}
+        onSelect={(path) => handleRowSelect(path, rowIndex)}
+        isSelected={selectedIndex === rowIndex}
         searchQuery={currentQuery}
         caseInsensitive={!caseSensitive}
       />
     ),
-    [handleRowContextMenu, handleRowSelect, selectedPath, currentQuery, caseSensitive],
+    [handleRowContextMenu, handleRowSelect, selectedIndex, currentQuery, caseSensitive],
   );
 
   const getDisplayState = (): 'loading' | 'error' | 'empty' | 'results' => {
