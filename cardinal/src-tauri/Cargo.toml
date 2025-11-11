@@ -40,6 +40,7 @@ cardinal-sdk.path = "../../cardinal-sdk"
 search-cache.path = "../../search-cache"
 fswalk.path = "../../fswalk"
 fs-icon.path = "../../fs-icon"
+search-cancel.path = "../../search-cancel"
 
 [features]
 default = []

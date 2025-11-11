@@ -8,6 +8,6 @@ members = [
   "was",
   "fs-icon",
   "query-segmentation",
-  "cardinal-syntax",
+  "cardinal-syntax", "search-cancel",
 ]
 exclude = ["cardinal"]

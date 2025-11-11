@@ -2,7 +2,10 @@
 use core::str;
 use parking_lot::Mutex;
 use regex::Regex;
+use search_cancel::CancellationToken;
 use std::collections::BTreeSet;
+
+const CANCEL_CHECK_INTERVAL: usize = 0x10000;
 
 pub struct NamePool {
     inner: Mutex<BTreeSet<Box<str>>>,
@@ -60,51 +63,71 @@ impl NamePool {
     pub fn search_substr<'search, 'pool: 'search>(
         &'pool self,
         substr: &'search str,
-    ) -> BTreeSet<&'pool str> {
-        self.inner
-            .lock()
-            .iter()
-            .filter(|&x| x.contains(substr))
-            .map(|x| unsafe { str::from_raw_parts(x.as_ptr(), x.len()) })
-            .collect()
+        cancellation_token: CancellationToken,
+    ) -> Option<BTreeSet<&'pool str>> {
+        let mut result = BTreeSet::new();
+        for (i, x) in self.inner.lock().iter().enumerate() {
+            if i % CANCEL_CHECK_INTERVAL == 0 && cancellation_token.is_cancelled() {
+                return None;
+            }
+            if x.contains(substr) {
+                result.insert(unsafe { str::from_raw_parts(x.as_ptr(), x.len()) });
+            }
+        }
+        Some(result)
     }
 
     pub fn search_suffix<'search, 'pool: 'search>(
         &'pool self,
         suffix: &'search str,
-    ) -> BTreeSet<&'pool str> {
-        self.inner
-            .lock()
-            .iter()
-            .filter(|&x| x.ends_with(suffix))
-            .map(|x| unsafe { str::from_raw_parts(x.as_ptr(), x.len()) })
-            .collect()
+        cancellation_token: CancellationToken,
+    ) -> Option<BTreeSet<&'pool str>> {
+        let mut result = BTreeSet::new();
+        for (i, x) in self.inner.lock().iter().enumerate() {
+            if i % CANCEL_CHECK_INTERVAL == 0 && cancellation_token.is_cancelled() {
+                return None;
+            }
+            if x.ends_with(suffix) {
+                result.insert(unsafe { str::from_raw_parts(x.as_ptr(), x.len()) });
+            }
+        }
+        Some(result)
     }
 
     pub fn search_prefix<'search, 'pool: 'search>(
         &'pool self,
         prefix: &'search str,
-    ) -> BTreeSet<&'pool str> {
-        self.inner
-            .lock()
-            .iter()
-            .filter(|&x| x.starts_with(prefix))
-            .map(|x| unsafe { str::from_raw_parts(x.as_ptr(), x.len()) })
-            .collect()
+        cancellation_token: CancellationToken,
+    ) -> Option<BTreeSet<&'pool str>> {
+        let mut result = BTreeSet::new();
+        for (i, x) in self.inner.lock().iter().enumerate() {
+            if i % CANCEL_CHECK_INTERVAL == 0 && cancellation_token.is_cancelled() {
+                return None;
+            }
+            if x.starts_with(prefix) {
+                result.insert(unsafe { str::from_raw_parts(x.as_ptr(), x.len()) });
+            }
+        }
+
+        Some(result)
     }
 
     pub fn search_regex<'search, 'pool: 'search>(
         &'pool self,
         pattern: &Regex,
-    ) -> BTreeSet<&'pool str> {
-        self.inner
-            .lock()
-            .iter()
-            .filter_map(|x| {
-                let existing = unsafe { str::from_raw_parts(x.as_ptr(), x.len()) };
-                pattern.is_match(existing).then_some(existing)
-            })
-            .collect()
+        cancellation_token: CancellationToken,
+    ) -> Option<BTreeSet<&'pool str>> {
+        let mut result = BTreeSet::new();
+        for (i, x) in self.inner.lock().iter().enumerate() {
+            if i % CANCEL_CHECK_INTERVAL == 0 && cancellation_token.is_cancelled() {
+                return None;
+            }
+            let existing = unsafe { str::from_raw_parts(x.as_ptr(), x.len()) };
+            if pattern.is_match(existing) {
+                result.insert(existing);
+            }
+        }
+        Some(result)
     }
 
     // `exact` should starts with a '\0', and ends with a '\0',
@@ -112,19 +135,74 @@ impl NamePool {
     pub fn search_exact<'search, 'pool: 'search>(
         &'pool self,
         exact: &'search str,
-    ) -> BTreeSet<&'pool str> {
-        self.inner
-            .lock()
-            .iter()
-            .filter(|&x| (&**x == exact))
-            .map(|x| unsafe { str::from_raw_parts(x.as_ptr(), x.len()) })
-            .collect()
+        cancellation_token: CancellationToken,
+    ) -> Option<BTreeSet<&'pool str>> {
+        let mut result = BTreeSet::new();
+        for (i, x) in self.inner.lock().iter().enumerate() {
+            if i % CANCEL_CHECK_INTERVAL == 0 && cancellation_token.is_cancelled() {
+                return None;
+            }
+            if &**x == exact {
+                result.insert(unsafe { str::from_raw_parts(x.as_ptr(), x.len()) });
+            }
+        }
+        Some(result)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn guard<T>(value: Option<T>) -> T {
+        value.expect("noop cancellation should not trigger")
+    }
+
+    fn substr<'pool>(pool: &'pool NamePool, needle: &str) -> BTreeSet<&'pool str> {
+        guard(pool.search_substr(needle, CancellationToken::noop()))
+    }
+
+    fn suffix_search<'pool>(pool: &'pool NamePool, needle: &str) -> BTreeSet<&'pool str> {
+        guard(pool.search_suffix(needle, CancellationToken::noop()))
+    }
+
+    fn prefix_search<'pool>(pool: &'pool NamePool, needle: &str) -> BTreeSet<&'pool str> {
+        guard(pool.search_prefix(needle, CancellationToken::noop()))
+    }
+
+    fn exact_search<'pool>(pool: &'pool NamePool, needle: &str) -> BTreeSet<&'pool str> {
+        guard(pool.search_exact(needle, CancellationToken::noop()))
+    }
+
+    fn regex_search<'pool>(pool: &'pool NamePool, pattern: &Regex) -> BTreeSet<&'pool str> {
+        guard(pool.search_regex(pattern, CancellationToken::noop()))
+    }
+
+    #[test]
+    fn test_search_substr_cancelled_returns_none() {
+        let pool = NamePool::new();
+        pool.push("alpha");
+        pool.push("beta");
+
+        let token = CancellationToken::new(1);
+        // Move global active version forward so the token becomes cancelled.
+        let _ = CancellationToken::new(2);
+
+        assert!(pool.search_substr("a", token).is_none());
+    }
+
+    #[test]
+    fn test_search_regex_partial_results_cancelled() {
+        let pool = NamePool::new();
+        for idx in 0..5 {
+            pool.push(&format!("item{idx}"));
+        }
+        let token = CancellationToken::new(10);
+        let _ = CancellationToken::new(11);
+        let regex = Regex::new("item\\d").unwrap();
+
+        assert!(pool.search_regex(&regex, token).is_none());
+    }
 
     #[test]
     fn test_new() {
@@ -181,7 +259,7 @@ mod tests {
         pool.push("hello world");
         pool.push("hello world hello");
 
-        let result = pool.search_substr("hello");
+        let result = substr(&pool, "hello");
         assert_eq!(result.len(), 3);
         assert!(result.contains("hello"));
         assert!(result.contains("hello world"));
@@ -195,7 +273,7 @@ mod tests {
         pool.push("world");
         pool.push("hello world");
 
-        let result = pool.search_substr("world");
+        let result = substr(&pool, "world");
         assert_eq!(result.len(), 2);
         assert!(result.contains("world"));
         assert!(result.contains("hello world"));
@@ -209,7 +287,7 @@ mod tests {
         pool.push("hello world");
 
         let suffix = "world";
-        let result = pool.search_suffix(suffix);
+        let result = suffix_search(&pool, suffix);
         assert_eq!(result.len(), 2);
         assert!(result.contains("world"));
         assert!(result.contains("hello world"));
@@ -223,7 +301,7 @@ mod tests {
         pool.push("hello world");
 
         let prefix = "hello";
-        let result = pool.search_prefix(prefix);
+        let result = prefix_search(&pool, prefix);
         assert_eq!(result.len(), 2);
         assert!(result.contains("hello"));
         assert!(result.contains("hello world"));
@@ -237,12 +315,12 @@ mod tests {
         pool.push("hello world");
 
         let exact = "hello";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert_eq!(result.len(), 1);
         assert!(result.contains("hello"));
 
         let exact = "world";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert_eq!(result.len(), 1);
         assert!(result.contains("world"));
     }
@@ -257,7 +335,7 @@ mod tests {
         pool.push("helloworld");
 
         let regex = Regex::new("hell.*").unwrap();
-        let result = pool.search_regex(&regex);
+        let result = regex_search(&pool, &regex);
         assert_eq!(result.len(), 2);
         assert!(result.contains("hello"));
         assert!(result.contains("helloworld"));
@@ -275,7 +353,7 @@ mod tests {
             .case_insensitive(true)
             .build()
             .unwrap();
-        let result = pool.search_regex(&regex);
+        let result = regex_search(&pool, &regex);
         assert_eq!(result.len(), 1);
         assert!(result.contains("Alpha"));
     }
@@ -286,10 +364,10 @@ mod tests {
         pool.push("hello");
         pool.push("world");
 
-        let result = pool.search_substr("nonexistent");
+        let result = substr(&pool, "nonexistent");
         assert!(result.is_empty());
 
-        let result = pool.search_substr("nonexistent");
+        let result = substr(&pool, "nonexistent");
         assert!(result.is_empty());
     }
 
@@ -300,7 +378,7 @@ mod tests {
         pool.push("world");
         pool.push("hell");
 
-        let result = pool.search_substr("hell");
+        let result = substr(&pool, "hell");
         assert_eq!(result.len(), 2);
         assert!(result.contains("hello"));
         assert!(result.contains("hell"));
@@ -314,17 +392,17 @@ mod tests {
         pool.push("こんにちは世界");
 
         let exact = "こんにちは";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert_eq!(result.len(), 1);
         assert!(result.contains("こんにちは"));
 
         let exact = "世界";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert_eq!(result.len(), 1);
         assert!(result.contains("世界"));
 
         let exact = "こんにちは世界";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert_eq!(result.len(), 1);
         assert!(result.contains("こんにちは世界"));
     }
@@ -337,17 +415,17 @@ mod tests {
         pool.push("testtesttest");
 
         let exact = "test";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert_eq!(result.len(), 1);
         assert!(result.contains("test"));
 
         let exact = "testtest";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert_eq!(result.len(), 1);
         assert!(result.contains("testtest"));
 
         let exact = "testtesttest";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert_eq!(result.len(), 1);
         assert!(result.contains("testtesttest"));
     }
@@ -359,11 +437,11 @@ mod tests {
         pool.push("world");
 
         let exact = "\0\0hello\0";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert!(result.is_empty());
 
         let exact = "\0hello\0\0";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert!(result.is_empty());
     }
 
@@ -375,17 +453,17 @@ mod tests {
         pool.push("ab");
 
         let exact = "";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert_eq!(result.len(), 1);
         assert!(result.contains(""));
 
         let exact = "a";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert_eq!(result.len(), 1);
         assert!(result.contains("a"));
 
         let exact = "ab";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert_eq!(result.len(), 1);
         assert!(result.contains("ab"));
     }
@@ -399,22 +477,22 @@ mod tests {
         pool.push("test123");
 
         let exact = "test";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert_eq!(result.len(), 1);
         assert!(result.contains("test"));
 
         let exact = "testing";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert_eq!(result.len(), 1);
         assert!(result.contains("testing"));
 
         let exact = "tester";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert_eq!(result.len(), 1);
         assert!(result.contains("tester"));
 
         let exact = "test123";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert_eq!(result.len(), 1);
         assert!(result.contains("test123"));
     }
@@ -426,7 +504,7 @@ mod tests {
         pool.push("世界");
         pool.push("こんにちは世界");
 
-        let result = pool.search_substr("世界");
+        let result = substr(&pool, "世界");
         assert_eq!(result.len(), 2);
         assert!(result.contains("世界"));
         assert!(result.contains("こんにちは世界"));
@@ -439,7 +517,7 @@ mod tests {
         pool.push("world");
 
         let prefix = "nonexistent";
-        let result = pool.search_prefix(prefix);
+        let result = prefix_search(&pool, prefix);
         assert!(result.is_empty());
     }
 
@@ -450,7 +528,7 @@ mod tests {
         pool.push("world");
 
         let exact = "nonexistent";
-        let result = pool.search_exact(exact);
+        let result = exact_search(&pool, exact);
         assert!(result.is_empty());
     }
 
@@ -461,10 +539,10 @@ mod tests {
         pool.push("hello world");
         pool.push("hello world hello");
 
-        let substr_result: Vec<_> = pool.search_substr("hello").into_iter().collect();
+        let substr_result: Vec<_> = substr(&pool, "hello").into_iter().collect();
         assert_eq!(substr_result.len(), 3);
 
-        let exact_result: Vec<_> = pool.search_exact("hello").into_iter().collect();
+        let exact_result: Vec<_> = exact_search(&pool, "hello").into_iter().collect();
         assert_eq!(exact_result.len(), 1);
         assert_eq!(exact_result[0], "hello");
 
@@ -481,17 +559,17 @@ mod tests {
         pool.push("abcabc");
 
         let exact = "abc";
-        let result: Vec<_> = pool.search_exact(exact).into_iter().collect();
+        let result: Vec<_> = exact_search(&pool, exact).into_iter().collect();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], "abc");
 
         let exact = "abcabc";
-        let result: Vec<_> = pool.search_exact(exact).into_iter().collect();
+        let result: Vec<_> = exact_search(&pool, exact).into_iter().collect();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], "abcabc");
 
         let exact = "ab";
-        let result: Vec<_> = pool.search_exact(exact).into_iter().collect();
+        let result: Vec<_> = exact_search(&pool, exact).into_iter().collect();
         assert_eq!(result.len(), 0);
     }
 
@@ -499,23 +577,23 @@ mod tests {
     fn test_boundary_single_char() {
         let pool = NamePool::new();
         pool.push("a");
-        let result: Vec<_> = pool.search_substr("a").into_iter().collect();
+        let result: Vec<_> = substr(&pool, "a").into_iter().collect();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], "a");
 
-        let result: Vec<_> = pool.search_substr("a").into_iter().collect();
+        let result: Vec<_> = substr(&pool, "a").into_iter().collect();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], "a");
 
         pool.push("abc");
-        let result: Vec<_> = pool.search_substr("a").into_iter().collect();
+        let result: Vec<_> = substr(&pool, "a").into_iter().collect();
         assert_eq!(result.len(), 2);
 
-        let result: Vec<_> = pool.search_substr("b").into_iter().collect();
+        let result: Vec<_> = substr(&pool, "b").into_iter().collect();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], "abc");
 
-        let result: Vec<_> = pool.search_substr("c").into_iter().collect();
+        let result: Vec<_> = substr(&pool, "c").into_iter().collect();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], "abc");
     }
@@ -529,14 +607,14 @@ mod tests {
         pool.push(&long_string);
         pool.push(&medium_string);
 
-        let result: Vec<_> = pool.search_substr("a").into_iter().collect();
+        let result: Vec<_> = substr(&pool, "a").into_iter().collect();
         assert_eq!(result.len(), 1);
 
-        let result: Vec<_> = pool.search_substr("b").into_iter().collect();
+        let result: Vec<_> = substr(&pool, "b").into_iter().collect();
         assert_eq!(result.len(), 1);
 
         let middle_substr = "a".repeat(100);
-        let result: Vec<_> = pool.search_substr(&middle_substr).into_iter().collect();
+        let result: Vec<_> = substr(&pool, &middle_substr).into_iter().collect();
         assert_eq!(result.len(), 1);
     }
 
@@ -549,19 +627,19 @@ mod tests {
         pool.push("backslash\\here");
         pool.push("unicode🚀test");
 
-        let result: Vec<_> = pool.search_substr("hello\nworld").into_iter().collect();
+        let result: Vec<_> = substr(&pool, "hello\nworld").into_iter().collect();
         assert_eq!(result.len(), 1);
 
-        let result: Vec<_> = pool.search_substr("tab\there").into_iter().collect();
+        let result: Vec<_> = substr(&pool, "tab\there").into_iter().collect();
         assert_eq!(result.len(), 1);
 
-        let result: Vec<_> = pool.search_substr("quote\"here").into_iter().collect();
+        let result: Vec<_> = substr(&pool, "quote\"here").into_iter().collect();
         assert_eq!(result.len(), 1);
 
-        let result: Vec<_> = pool.search_substr("backslash\\here").into_iter().collect();
+        let result: Vec<_> = substr(&pool, "backslash\\here").into_iter().collect();
         assert_eq!(result.len(), 1);
 
-        let result: Vec<_> = pool.search_substr("unicode🚀test").into_iter().collect();
+        let result: Vec<_> = substr(&pool, "unicode🚀test").into_iter().collect();
         assert_eq!(result.len(), 1);
     }
 
@@ -572,7 +650,7 @@ mod tests {
         pool.push("aaaa");
         pool.push("aaaaa");
 
-        let result: Vec<_> = pool.search_substr("aa").into_iter().collect();
+        let result: Vec<_> = substr(&pool, "aa").into_iter().collect();
         assert_eq!(result.len(), 3);
 
         let mut unique_results = result.clone();
@@ -590,7 +668,7 @@ mod tests {
         }
         assert_eq!(pool.len(), 1); // Should only store one unique string
 
-        let result = pool.search_exact("duplicate");
+        let result = exact_search(&pool, "duplicate");
         assert_eq!(result.len(), 1);
         assert!(result.contains("duplicate"));
     }
@@ -607,7 +685,7 @@ mod tests {
         let long_str = "x".repeat(800);
         pool.push(&long_str); // This should succeed as it goes to a new cache line
 
-        let result: Vec<_> = pool.search_substr(&long_str).into_iter().collect();
+        let result: Vec<_> = substr(&pool, &long_str).into_iter().collect();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], long_str);
     }
@@ -621,19 +699,19 @@ mod tests {
         pool.push("xy"); // Two chars
         pool.push("xyz"); // Three chars
 
-        let result = pool.search_exact("");
+        let result = exact_search(&pool, "");
         assert_eq!(result.len(), 1);
         assert!(result.contains(""));
 
-        let result = pool.search_exact("x");
+        let result = exact_search(&pool, "x");
         assert_eq!(result.len(), 1);
         assert!(result.contains("x"));
 
-        let result = pool.search_exact("xy");
+        let result = exact_search(&pool, "xy");
         assert_eq!(result.len(), 1);
         assert!(result.contains("xy"));
 
-        let result = pool.search_exact("xyz");
+        let result = exact_search(&pool, "xyz");
         assert_eq!(result.len(), 1);
         assert!(result.contains("xyz"));
     }
@@ -645,10 +723,10 @@ mod tests {
         pool.push("hello");
 
         // Search for pattern longer than any string
-        let result = pool.search_substr("helloworld");
+        let result = substr(&pool, "helloworld");
         assert!(result.is_empty());
 
-        let result = pool.search_substr("helloworld");
+        let result = substr(&pool, "helloworld");
         assert!(result.is_empty());
     }
 
@@ -666,10 +744,10 @@ mod tests {
         }
 
         // Search should work across all cache lines
-        let result = pool.search_substr("line1_");
+        let result = substr(&pool, "line1_");
         assert_eq!(result.len(), 100);
 
-        let result = pool.search_substr("line2_");
+        let result = substr(&pool, "line2_");
         assert_eq!(result.len(), 100);
 
         // Total unique strings
@@ -685,26 +763,26 @@ mod tests {
         pool.push("abcd");
 
         // Test prefix searches
-        let result = pool.search_prefix("a");
+        let result = prefix_search(&pool, "a");
         assert_eq!(result.len(), 4); // All strings start with "a"
 
-        let result = pool.search_prefix("ab");
+        let result = prefix_search(&pool, "ab");
         assert_eq!(result.len(), 3); // "ab", "abc", "abcd"
 
-        let result = pool.search_prefix("abc");
+        let result = prefix_search(&pool, "abc");
         assert_eq!(result.len(), 2); // "abc", "abcd"
 
-        let result = pool.search_prefix("abcd");
+        let result = prefix_search(&pool, "abcd");
         assert_eq!(result.len(), 1); // "abcd"
 
         // Test suffix searches
-        let result = pool.search_suffix("d");
+        let result = suffix_search(&pool, "d");
         assert_eq!(result.len(), 1); // "abcd"
 
-        let result = pool.search_suffix("cd");
+        let result = suffix_search(&pool, "cd");
         assert_eq!(result.len(), 1); // "abcd"
 
-        let result = pool.search_suffix("bcd");
+        let result = suffix_search(&pool, "bcd");
         assert_eq!(result.len(), 1); // "abcd"
     }
 
@@ -716,16 +794,16 @@ mod tests {
         pool.push("null\0byte");
         pool.push("bell\x07sound");
 
-        let result = pool.search_substr("line1\nline2");
+        let result = substr(&pool, "line1\nline2");
         assert_eq!(result.len(), 1);
 
-        let result = pool.search_substr("tab\there");
+        let result = substr(&pool, "tab\there");
         assert_eq!(result.len(), 1);
 
-        let result = pool.search_substr("null\0byte");
+        let result = substr(&pool, "null\0byte");
         assert_eq!(result.len(), 1);
 
-        let result = pool.search_substr("bell\x07sound");
+        let result = substr(&pool, "bell\x07sound");
         assert_eq!(result.len(), 1);
     }
 
@@ -739,22 +817,22 @@ mod tests {
         pool.push("🚀🌟"); // Emojis
         pool.push("e\u{0301}"); // Combining character
 
-        let result = pool.search_substr("café");
+        let result = substr(&pool, "café");
         assert_eq!(result.len(), 1);
 
-        let result = pool.search_substr("naïve");
+        let result = substr(&pool, "naïve");
         assert_eq!(result.len(), 1);
 
-        let result = pool.search_substr("Москва");
+        let result = substr(&pool, "Москва");
         assert_eq!(result.len(), 1);
 
-        let result = pool.search_substr("東京");
+        let result = substr(&pool, "東京");
         assert_eq!(result.len(), 1);
 
-        let result = pool.search_substr("🚀🌟");
+        let result = substr(&pool, "🚀🌟");
         assert_eq!(result.len(), 1);
 
-        let result = pool.search_substr("e\u{0301}");
+        let result = substr(&pool, "e\u{0301}");
         assert_eq!(result.len(), 1);
     }
 
@@ -765,7 +843,7 @@ mod tests {
         pool.push("ababa");
 
         // "ab" appears in both strings, but should only be returned once per string
-        let result: Vec<_> = pool.search_substr("ab").into_iter().collect();
+        let result: Vec<_> = substr(&pool, "ab").into_iter().collect();
         assert_eq!(result.len(), 2); // Two strings contain "ab"
         assert!(result.contains(&"abab"));
         assert!(result.contains(&"ababa"));
@@ -779,12 +857,12 @@ mod tests {
         pool.push("atestb");
 
         // Exact search for "test"
-        let exact_result = pool.search_exact("test");
+        let exact_result = exact_search(&pool, "test");
         assert_eq!(exact_result.len(), 1);
         assert!(exact_result.contains("test"));
 
         // Substring search for "test"
-        let substr_result = pool.search_substr("test");
+        let substr_result = substr(&pool, "test");
         assert_eq!(substr_result.len(), 3); // "test", "testing", "atestb"
         assert!(substr_result.contains("test"));
         assert!(substr_result.contains("testing"));
@@ -801,7 +879,7 @@ mod tests {
         // Should only have one empty string due to deduplication
         assert_eq!(pool.len(), 2);
 
-        let result = pool.search_exact("");
+        let result = exact_search(&pool, "");
         assert_eq!(result.len(), 1);
         assert!(result.contains(""));
     }
@@ -817,12 +895,12 @@ mod tests {
         assert_eq!(pool.len(), 1000);
 
         // Search for a specific number
-        let result = pool.search_exact("42");
+        let result = exact_search(&pool, "42");
         assert_eq!(result.len(), 1);
         assert!(result.contains("42"));
 
         // Search for a pattern that appears in many strings
-        let result = pool.search_substr("1");
+        let result = substr(&pool, "1");
         assert_eq!(result.len(), 271);
     }
 }

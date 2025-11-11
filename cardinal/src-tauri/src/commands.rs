@@ -6,9 +6,11 @@ use anyhow::Result;
 use base64::{Engine as _, engine::general_purpose};
 use crossbeam_channel::{Receiver, Sender};
 use search_cache::{SearchOptions, SearchResultNode, SlabIndex, SlabNodeMetadata};
+use search_cancel::CancellationToken;
 use serde::{Deserialize, Serialize};
 use std::{process::Command, sync::atomic::Ordering};
 use tauri::{AppHandle, State};
+use tracing::info;
 
 #[derive(Debug, Clone, Copy, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -37,11 +39,12 @@ impl From<SearchOptionsPayload> for SearchOptions {
 pub struct SearchJob {
     pub query: String,
     pub options: SearchOptionsPayload,
+    pub cancellation_token: CancellationToken,
 }
 
 pub struct SearchState {
     search_tx: Sender<SearchJob>,
-    result_rx: Receiver<Result<Vec<SlabIndex>>>,
+    result_rx: Receiver<Result<Option<Vec<SlabIndex>>>>,
 
     node_info_tx: Sender<Vec<SlabIndex>>,
     node_info_results_rx: Receiver<Vec<SearchResultNode>>,
@@ -54,7 +57,7 @@ impl SearchState {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         search_tx: Sender<SearchJob>,
-        result_rx: Receiver<Result<Vec<SlabIndex>>>,
+        result_rx: Receiver<Result<Option<Vec<SlabIndex>>>>,
         node_info_tx: Sender<Vec<SlabIndex>>,
         node_info_results_rx: Receiver<Vec<SearchResultNode>>,
         icon_viewport_tx: Sender<(u64, Vec<SlabIndex>)>,
@@ -101,18 +104,30 @@ impl NodeInfoMetadata {
 pub async fn search(
     query: String,
     options: Option<SearchOptionsPayload>,
+    version: u64,
     state: State<'_, SearchState>,
 ) -> Result<Vec<SlabIndex>, String> {
     let options = options.unwrap_or_default();
+    let cancellation_token = CancellationToken::new(version);
     state
         .search_tx
-        .send(SearchJob { query, options })
+        .send(SearchJob {
+            query,
+            options,
+            cancellation_token,
+        })
         .map_err(|e| format!("Failed to send search request: {e:?}"))?;
 
     let search_result = state
         .result_rx
         .recv()
-        .map_err(|e| format!("Failed to receive search result: {e:?}"))?;
+        .map_err(|e| format!("Failed to receive search result: {e:?}"))?
+        .map(|res| {
+            if res.is_none() {
+                info!("Search {version} was cancelled");
+            }
+            res.unwrap_or_default()
+        });
 
     search_result.map_err(|e| format!("Failed to process search result: {e:?}"))
 }

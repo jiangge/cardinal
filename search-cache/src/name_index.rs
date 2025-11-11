@@ -1,4 +1,6 @@
 use crate::{FileNodes, NAME_POOL, SlabIndex};
+use itertools::Itertools;
+use search_cancel::CancellationToken;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, time::Instant};
 use thin_vec::ThinVec;
@@ -74,11 +76,20 @@ impl NameIndex {
         self.map.is_empty()
     }
 
-    pub fn all_indices(&self) -> Vec<SlabIndex> {
+    pub fn all_indices(&self, cancellation_token: CancellationToken) -> Option<Vec<SlabIndex>> {
         self.map
             .values()
             .flat_map(|indices| indices.iter().copied())
-            .collect()
+            .enumerate()
+            .map(|(i, index)| {
+                if i % 0x10000 == 0 && cancellation_token.is_cancelled() {
+                    Err(())
+                } else {
+                    Ok(index)
+                }
+            })
+            .try_collect()
+            .ok()
     }
 
     pub fn get(&self, name: &str) -> Option<&SortedSlabIndices> {

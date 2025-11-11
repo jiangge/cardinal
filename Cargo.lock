@@ -560,6 +560,7 @@ dependencies = [
  "namepool",
  "query-segmentation",
  "search-cache",
+ "search-cancel",
  "serde",
  "tracing-subscriber",
 ]
@@ -583,12 +584,12 @@ checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 name = "namepool"
 version = "0.1.0"
 dependencies = [
- "itertools",
  "memchr",
  "parking_lot",
  "rayon",
  "regex",
  "rustc-hash",
+ "search-cancel",
  "serde",
 ]
 
@@ -1055,10 +1056,12 @@ dependencies = [
  "enumn",
  "fswalk",
  "hashbrown",
+ "itertools",
  "namepool",
  "postcard",
  "query-segmentation",
  "regex",
+ "search-cancel",
  "serde",
  "slab",
  "tempdir",
@@ -1067,6 +1070,10 @@ dependencies = [
  "typed-num",
  "zstd",
 ]
+
+[[package]]
+name = "search-cancel"
+version = "0.1.0"
 
 [[package]]
 name = "semver"

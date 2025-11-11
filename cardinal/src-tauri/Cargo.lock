@@ -392,6 +392,7 @@ dependencies = [
  "parking_lot",
  "rayon",
  "search-cache",
+ "search-cancel",
  "serde",
  "serde_json",
  "tauri",
@@ -2261,12 +2262,12 @@ dependencies = [
 name = "namepool"
 version = "0.1.0"
 dependencies = [
- "itertools",
  "memchr",
  "parking_lot",
  "rayon",
  "regex",
  "rustc-hash",
+ "search-cancel",
  "serde",
 ]
 
@@ -3448,10 +3449,12 @@ dependencies = [
  "enumn",
  "fswalk",
  "hashbrown 0.16.0",
+ "itertools",
  "namepool",
  "postcard",
  "query-segmentation",
  "regex",
+ "search-cancel",
  "serde",
  "slab",
  "thin-vec",
@@ -3459,6 +3462,10 @@ dependencies = [
  "typed-num",
  "zstd",
 ]
+
+[[package]]
+name = "search-cancel"
+version = "0.1.0"
 
 [[package]]
 name = "selectors"

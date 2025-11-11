@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod extra {
     use crate::SearchCache;
+    use search_cancel::CancellationToken;
     use std::{fs, path::PathBuf};
     use tempdir::TempDir;
 
@@ -10,7 +11,9 @@ mod extra {
         fs::File::create(tmp.path().join("a.txt")).unwrap();
         fs::File::create(tmp.path().join("b.txt")).unwrap();
         let cache = SearchCache::walk_fs(tmp.path().to_path_buf());
-        let all = cache.search_empty();
+        let all = cache
+            .search_empty(CancellationToken::noop())
+            .expect("noop cancellation token should not cancel");
         assert_eq!(all.len(), cache.get_total_files());
     }
 
@@ -63,7 +66,10 @@ mod extra {
         let idxs = cache.search("meta.txt").unwrap();
         assert_eq!(idxs.len(), 1);
         // First query_files returns metadata None
-        let q1 = cache.query_files("meta.txt".into()).unwrap();
+        let q1 = cache
+            .query_files("meta.txt".into(), CancellationToken::noop())
+            .expect("query should succeed")
+            .expect("noop cancellation token should not cancel");
         assert_eq!(q1.len(), 1);
         assert!(q1[0].metadata.is_none());
         // expand_file_nodes should fetch metadata

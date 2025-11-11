@@ -8,6 +8,7 @@ fswalk = { path = "../fswalk" }
 namepool = { path = "../namepool" }
 cardinal-sdk = { path = "../cardinal-sdk" }
 query-segmentation = { path = "../query-segmentation" }
+search-cancel = { path = "../search-cancel" }
 zstd = { version = "0.13", features = ["zstdmt"] }
 serde = { version = "1", features = ["derive"] }
 slab = { version = "0.4", features = ["serde"] }
@@ -16,6 +17,7 @@ crossbeam-channel = "0.5.15"
 typed-num = { version = "0.3.0", default-features = false, features = [
   "serde",
 ] }
+itertools = "0.14"
 tracing = "0.1"
 postcard = { version = "1", features = ["use-std"] }
 enumn = "0.1"

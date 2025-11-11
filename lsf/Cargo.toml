@@ -9,6 +9,7 @@ namepool.path = "../namepool"
 cardinal-sdk.path = "../cardinal-sdk"
 search-cache = { path = "../search-cache" }
 query-segmentation.path = "../query-segmentation"
+search-cancel = { path = "../search-cancel" }
 serde = { version = "1", features = ["derive"] }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1.0.97"

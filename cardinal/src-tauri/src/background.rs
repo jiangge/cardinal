@@ -2,7 +2,7 @@ use crate::{
     commands::SearchJob,
     lifecycle::{AppLifecycleState, load_app_state, update_app_state},
 };
-use anyhow::Result as AnyhowResult;
+use anyhow::Result;
 use base64::{Engine as _, engine::general_purpose};
 use cardinal_sdk::{EventFlag, EventWatcher};
 use crossbeam_channel::{Receiver, Sender};
@@ -34,7 +34,7 @@ pub struct IconPayload {
 pub struct BackgroundLoopChannels {
     pub finish_rx: Receiver<Sender<Option<SearchCache>>>,
     pub search_rx: Receiver<SearchJob>,
-    pub result_tx: Sender<AnyhowResult<Vec<SlabIndex>>>,
+    pub result_tx: Sender<Result<Option<Vec<SlabIndex>>>>,
     pub node_info_rx: Receiver<Vec<SlabIndex>>,
     pub node_info_results_tx: Sender<Vec<SearchResultNode>>,
     pub icon_viewport_rx: Receiver<(u64, Vec<SlabIndex>)>,
@@ -102,12 +102,20 @@ pub fn run_background_event_loop(
                 return;
             }
             recv(search_rx) -> job => {
-                let SearchJob { query, options } = job.expect("Search channel closed");
+                let SearchJob {
+                    query,
+                    options,
+                    cancellation_token,
+                } = job.expect("Search channel closed");
                 let opts = SearchOptions::from(options);
                 let result = if query.is_empty() {
-                    Ok(cache.search_empty())
+                    Ok(cache.search_empty(cancellation_token))
                 } else {
-                    cache.search_with_options(&query, opts)
+                    cache.search_with_options(
+                        &query,
+                        opts,
+                        cancellation_token,
+                    )
                 };
                 result_tx.send(result).expect("Failed to send result");
             }

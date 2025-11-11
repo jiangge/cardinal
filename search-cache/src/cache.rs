@@ -9,6 +9,7 @@ use fswalk::{Node, NodeMetadata, WalkData, walk_it};
 use hashbrown::HashSet;
 use namepool::NamePool;
 use query_segmentation::query_segmentation;
+use search_cancel::CancellationToken;
 use std::{
     collections::BTreeSet,
     ffi::OsStr,
@@ -170,19 +171,22 @@ impl SearchCache {
         }
     }
 
-    pub fn search_empty(&self) -> Vec<SlabIndex> {
-        self.name_index.all_indices()
+    pub fn search_empty(&self, cancellation_token: CancellationToken) -> Option<Vec<SlabIndex>> {
+        self.name_index.all_indices(cancellation_token)
     }
 
+    #[cfg(test)]
     pub fn search(&self, line: &str) -> Result<Vec<SlabIndex>> {
-        self.search_with_options(line, SearchOptions::default())
+        self.search_with_options(line, SearchOptions::default(), CancellationToken::noop())
+            .map(|x| x.unwrap_or_default())
     }
 
     pub fn search_with_options(
         &self,
         line: &str,
         options: SearchOptions,
-    ) -> Result<Vec<SlabIndex>> {
+        cancellation_token: CancellationToken,
+    ) -> Result<Option<Vec<SlabIndex>>> {
         let segments = query_segmentation(line);
         if segments.is_empty() {
             bail!("Unprocessable query: {line:?}");
@@ -194,7 +198,10 @@ impl SearchCache {
         for matcher in &matchers {
             if let Some(nodes) = &node_set {
                 let mut new_node_set = Vec::with_capacity(nodes.len());
-                for &node in nodes {
+                for (i, &node) in nodes.iter().enumerate() {
+                    if i % 0x10000 == 0 && cancellation_token.is_cancelled() {
+                        return Ok(None);
+                    }
                     let mut child_matches = self.file_nodes[node]
                         .children
                         .iter()
@@ -215,29 +222,37 @@ impl SearchCache {
                 // Use BTreeSet here to:
                 // 1. Deduplicate filenames
                 // 2. Keep filename of the search results in order
-                let names: BTreeSet<_> = match matcher {
+                let names: Option<BTreeSet<_>> = match matcher {
                     SegmentMatcher::Plain { kind, needle } => match kind {
-                        SegmentKind::Substr => NAME_POOL.search_substr(needle),
-                        SegmentKind::Prefix => NAME_POOL.search_prefix(needle),
-                        SegmentKind::Exact => NAME_POOL.search_exact(needle),
-                        SegmentKind::Suffix => NAME_POOL.search_suffix(needle),
+                        SegmentKind::Substr => NAME_POOL.search_substr(needle, cancellation_token),
+                        SegmentKind::Prefix => NAME_POOL.search_prefix(needle, cancellation_token),
+                        SegmentKind::Exact => NAME_POOL.search_exact(needle, cancellation_token),
+                        SegmentKind::Suffix => NAME_POOL.search_suffix(needle, cancellation_token),
                     },
-                    SegmentMatcher::Regex { regex } => NAME_POOL.search_regex(regex),
+                    SegmentMatcher::Regex { regex } => {
+                        NAME_POOL.search_regex(regex, cancellation_token)
+                    }
+                };
+                let Some(names) = names else {
+                    return Ok(None);
                 };
                 let mut nodes = Vec::with_capacity(names.len());
-                names.into_iter().for_each(|name| {
+                for (i, name) in names.iter().enumerate() {
+                    if i % 0x10000 == 0 && cancellation_token.is_cancelled() {
+                        return Ok(None);
+                    }
                     // namepool doesn't shrink, so it can contains non-existng names. Therefore, we don't error out on None branch here.
                     if let Some(x) = self.name_index.get(name) {
                         nodes.extend(x.iter());
                     }
-                });
+                }
                 node_set = Some(nodes);
             }
         }
         let search_time = search_time.elapsed();
         info!("Search time: {:?}", search_time);
         // Safety: node_set can't be None since segments is not empty.
-        Ok(node_set.unwrap())
+        Ok(Some(node_set.unwrap()))
     }
 
     /// Get the path of the node in the slab.
@@ -475,17 +490,22 @@ impl SearchCache {
     }
 
     /// Note that this function doesn't fetch metadata(even if it's not cahced) for the nodes.
-    pub fn query_files(&mut self, query: String) -> Result<Vec<SearchResultNode>> {
-        self.query_files_with_options(query, SearchOptions::default())
+    pub fn query_files(
+        &mut self,
+        query: String,
+        cancellation_token: CancellationToken,
+    ) -> Result<Option<Vec<SearchResultNode>>> {
+        self.query_files_with_options(query, SearchOptions::default(), cancellation_token)
     }
 
     pub fn query_files_with_options(
         &mut self,
         query: String,
         options: SearchOptions,
-    ) -> Result<Vec<SearchResultNode>> {
-        self.search_with_options(&query, options)
-            .map(|nodes| self.expand_file_nodes_inner::<false>(&nodes))
+        cancellation_token: CancellationToken,
+    ) -> Result<Option<Vec<SearchResultNode>>> {
+        self.search_with_options(&query, options, cancellation_token)
+            .map(|nodes| nodes.map(|nodes| self.expand_file_nodes_inner::<false>(&nodes)))
     }
 
     /// Returns a node info vector with the same length as the input nodes.
@@ -720,6 +740,22 @@ mod tests {
     use std::{fs, path::PathBuf};
     use tempdir::TempDir;
 
+    fn guard_indices(result: Result<Option<Vec<SlabIndex>>>) -> Vec<SlabIndex> {
+        result
+            .expect("search should succeed")
+            .expect("noop cancellation token should not cancel")
+    }
+
+    fn guard_nodes(result: Result<Option<Vec<SearchResultNode>>>) -> Vec<SearchResultNode> {
+        result
+            .expect("query should succeed")
+            .expect("noop cancellation token should not cancel")
+    }
+
+    fn query(cache: &mut SearchCache, query: impl Into<String>) -> Vec<SearchResultNode> {
+        guard_nodes(cache.query_files(query.into(), CancellationToken::noop()))
+    }
+
     fn make_node(name: &str, children: Vec<Node>) -> Node {
         Node {
             children,
@@ -945,7 +981,8 @@ mod tests {
             use_regex: true,
             case_insensitive: false,
         };
-        let indices = cache.search_with_options("foo\\d+", opts).unwrap();
+        let indices =
+            guard_indices(cache.search_with_options("foo\\d+", opts, CancellationToken::noop()));
         assert_eq!(indices.len(), 1);
         let nodes = cache.expand_file_nodes(&indices);
         assert_eq!(nodes.len(), 1);
@@ -956,7 +993,8 @@ mod tests {
             use_regex: true,
             case_insensitive: false,
         };
-        let miss = cache.search_with_options("bar\\d+", opts).unwrap();
+        let miss =
+            guard_indices(cache.search_with_options("bar\\d+", opts, CancellationToken::noop()));
         assert!(miss.is_empty());
     }
 
@@ -973,7 +1011,8 @@ mod tests {
             use_regex: false,
             case_insensitive: true,
         };
-        let indices = cache.search_with_options("alpha.txt", opts).unwrap();
+        let indices =
+            guard_indices(cache.search_with_options("alpha.txt", opts, CancellationToken::noop()));
         assert_eq!(indices.len(), 1);
         let nodes = cache.expand_file_nodes(&indices);
         assert_eq!(nodes.len(), 1);
@@ -983,8 +1022,54 @@ mod tests {
             use_regex: false,
             case_insensitive: true,
         };
-        let miss = cache.search_with_options("gamma.txt", opts).unwrap();
+        let miss =
+            guard_indices(cache.search_with_options("gamma.txt", opts, CancellationToken::noop()));
         assert!(miss.is_empty());
+    }
+
+    #[test]
+    fn test_search_empty_cancelled_returns_none() {
+        let temp_dir = TempDir::new("search_empty_cancelled").unwrap();
+        fs::File::create(temp_dir.path().join("alpha.txt")).unwrap();
+        let cache = SearchCache::walk_fs(temp_dir.path().to_path_buf());
+
+        let token = CancellationToken::new(1000);
+        let _ = CancellationToken::new(1001);
+
+        assert!(cache.search_empty(token).is_none());
+    }
+
+    #[test]
+    fn test_search_with_options_cancelled_returns_none() {
+        let temp_dir = TempDir::new("search_with_options_cancelled").unwrap();
+        fs::File::create(temp_dir.path().join("file_a.txt")).unwrap();
+        let cache = SearchCache::walk_fs(temp_dir.path().to_path_buf());
+
+        let token = CancellationToken::new(2000);
+        let _ = CancellationToken::new(2001);
+
+        let result = cache.search_with_options(
+            "file_a",
+            SearchOptions {
+                use_regex: false,
+                case_insensitive: false,
+            },
+            token,
+        );
+        assert!(matches!(result, Ok(None)));
+    }
+
+    #[test]
+    fn test_query_files_cancelled_returns_none() {
+        let temp_dir = TempDir::new("query_files_cancelled").unwrap();
+        fs::File::create(temp_dir.path().join("item.txt")).unwrap();
+        let mut cache = SearchCache::walk_fs(temp_dir.path().to_path_buf());
+
+        let token = CancellationToken::new(3000);
+        let _ = CancellationToken::new(3001);
+
+        let result = cache.query_files("item.txt".to_string(), token);
+        assert!(matches!(result, Ok(None)));
     }
 
     #[test]
@@ -1444,7 +1529,7 @@ mod tests {
         let mut cache = SearchCache::walk_fs(root_path.to_path_buf());
 
         // 1. Query for a specific file
-        let results1 = cache.query_files("file_a.txt".to_string()).unwrap();
+        let results1 = query(&mut cache, "file_a.txt");
         assert_eq!(results1.len(), 1);
         assert!(
             results1[0].path.ends_with("file_a.txt"),
@@ -1457,7 +1542,7 @@ mod tests {
         );
 
         // 2. Query for a file in a subdirectory
-        let results2 = cache.query_files("file_c.md".to_string()).unwrap();
+        let results2 = query(&mut cache, "file_c.md");
         assert_eq!(results2.len(), 1);
         assert!(
             results2[0].path.ends_with("dir_b/file_c.md"),
@@ -1467,7 +1552,7 @@ mod tests {
         assert!(results2[0].metadata.is_none());
 
         // 3. Query for a directory
-        let results3 = cache.query_files("dir_b".to_string()).unwrap();
+        let results3 = query(&mut cache, "dir_b");
         assert_eq!(results3.len(), 1);
         assert!(
             results3[0].path.ends_with("dir_b"),
@@ -1480,7 +1565,7 @@ mod tests {
         );
 
         // 4. Query with no results
-        let results4 = cache.query_files("non_existent.zip".to_string()).unwrap();
+        let results4 = query(&mut cache, "non_existent.zip");
         assert_eq!(results4.len(), 0);
     }
 
@@ -1497,7 +1582,7 @@ mod tests {
         let mut cache = SearchCache::walk_fs(root_path.to_path_buf());
 
         // 5. Query matching multiple files (substring)
-        let results5 = cache.query_files("file_a".to_string()).unwrap();
+        let results5 = query(&mut cache, "file_a");
         assert_eq!(
             results5.len(),
             2,
@@ -1509,7 +1594,7 @@ mod tests {
 
         // 6. Query with multiple segments (path-like search)
         // "dir_b/file_c" should find "dir_b/file_c.md"
-        let results6 = cache.query_files("dir_b/file_c".to_string()).unwrap();
+        let results6 = query(&mut cache, "dir_b/file_c");
         assert_eq!(results6.len(), 1);
         assert!(
             results6[0].path.ends_with("dir_b/file_c.md"),
@@ -1527,7 +1612,7 @@ mod tests {
         let mut cache = SearchCache::walk_fs(root_path.to_path_buf());
         let root_dir_name = root_path.file_name().unwrap().to_str().unwrap();
 
-        let results = cache.query_files(root_dir_name.to_string()).unwrap();
+        let results = query(&mut cache, root_dir_name.to_string());
         assert_eq!(results.len(), 1, "Should find the root directory itself");
         let expected_path = root_path;
         assert_eq!(
@@ -1546,7 +1631,7 @@ mod tests {
         let temp_dir = TempDir::new("test_query_files_empty_q").unwrap();
         let mut cache = SearchCache::walk_fs(temp_dir.path().to_path_buf());
         // query_segmentation("") returns empty vec, search() then bails.
-        let result = cache.query_files("".to_string());
+        let result = cache.query_files("".to_string(), CancellationToken::noop());
         assert!(
             result.is_err(),
             "Empty query string should result in an error"
@@ -1567,7 +1652,7 @@ mod tests {
         let mut cache = SearchCache::walk_fs(root.to_path_buf());
 
         // Query for the deep file directly
-        let results_deep_file = cache.query_files("gamma_file.txt".to_string()).unwrap();
+        let results_deep_file = query(&mut cache, "gamma_file.txt");
         assert_eq!(results_deep_file.len(), 1);
         let expected_suffix_deep = "alpha_dir/beta_subdir/gamma_file.txt".to_string();
         assert!(
@@ -1577,7 +1662,7 @@ mod tests {
         );
 
         // Query for intermediate directory
-        let results_sub1 = cache.query_files("alpha_dir".to_string()).unwrap();
+        let results_sub1 = query(&mut cache, "alpha_dir");
         assert_eq!(results_sub1.len(), 1);
         assert!(
             results_sub1[0].path.ends_with("alpha_dir"),
@@ -1586,7 +1671,7 @@ mod tests {
         );
 
         // Query for nested intermediate directory
-        let results_sub2 = cache.query_files("beta_subdir".to_string()).unwrap();
+        let results_sub2 = query(&mut cache, "beta_subdir");
         assert_eq!(results_sub2.len(), 1);
         assert!(
             results_sub2[0].path.ends_with("alpha_dir/beta_subdir"),
@@ -1595,9 +1680,7 @@ mod tests {
         );
 
         // Test multi-segment query for the deep file
-        let results_multi_segment = cache
-            .query_files("alpha_dir/beta_subdir/gamma_file".to_string())
-            .unwrap();
+        let results_multi_segment = query(&mut cache, "alpha_dir/beta_subdir/gamma_file");
         assert_eq!(results_multi_segment.len(), 1);
         assert!(
             results_multi_segment[0]
@@ -1608,9 +1691,7 @@ mod tests {
         );
 
         // Test multi-segment query for an intermediate directory
-        let results_multi_segment_dir = cache
-            .query_files("alpha_dir/beta_subdir".to_string())
-            .unwrap();
+        let results_multi_segment_dir = query(&mut cache, "alpha_dir/beta_subdir");
         assert_eq!(results_multi_segment_dir.len(), 1);
         assert!(
             results_multi_segment_dir[0]
@@ -1634,14 +1715,14 @@ mod tests {
         let mut cache = SearchCache::walk_fs(root_path.to_path_buf());
 
         // Check metadata from initial walk_fs_new
-        let results_file_walk = cache.query_files("walk_file.txt".to_string()).unwrap();
+        let results_file_walk = query(&mut cache, "walk_file.txt");
         assert_eq!(results_file_walk.len(), 1);
         assert!(
             results_file_walk[0].metadata.is_none(),
             "File metadata from walk_fs_new should be None"
         );
 
-        let results_dir_walk = cache.query_files("walk_dir".to_string()).unwrap();
+        let results_dir_walk = query(&mut cache, "walk_dir");
         assert_eq!(results_dir_walk.len(), 1);
         assert!(
             results_dir_walk[0].metadata.is_some(),
@@ -1659,9 +1740,7 @@ mod tests {
         };
         cache.handle_fs_events(vec![event]).unwrap();
 
-        let results_event_file = cache
-            .query_files("event_added_file.txt".to_string())
-            .unwrap();
+        let results_event_file = query(&mut cache, "event_added_file.txt");
         assert_eq!(results_event_file.len(), 1);
         let event_file_meta = results_event_file[0]
             .metadata
@@ -1683,14 +1762,14 @@ mod tests {
         };
         cache.handle_fs_events(vec![event_dir]).unwrap();
 
-        let results_event_dir = cache.query_files("event_added_dir".to_string()).unwrap();
+        let results_event_dir = query(&mut cache, "event_added_dir");
         assert_eq!(results_event_dir.len(), 1);
         assert!(
             results_event_dir[0].metadata.is_some(),
             "Dir metadata should be Some after event processing for dir"
         );
 
-        let results_file_in_event_dir = cache.query_files("inner_event.dat".to_string()).unwrap();
+        let results_file_in_event_dir = query(&mut cache, "inner_event.dat");
         assert_eq!(results_file_in_event_dir.len(), 1);
         let inner_file_meta = results_file_in_event_dir[0]
             .metadata
